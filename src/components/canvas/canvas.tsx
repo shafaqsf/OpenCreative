@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -81,7 +82,7 @@ export function Canvas() {
   const { addToast } = useToast();
 
   const svgRef = useRef<SVGSVGElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [drag, setDrag] = useState<DragMode>({ kind: "none" });
   const [marquee, setMarquee] = useState<{ start: Point; end: Point } | null>(
     null
@@ -175,6 +176,14 @@ export function Canvas() {
     [camera.zoom, elements, selectedIds]
   );
 
+  useEffect(() => {
+    if (!editingTextId) return;
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, [editingTextId]);
+
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
       if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -188,10 +197,11 @@ export function Canvas() {
       }
 
       if (e.button !== 0) return;
-      const world = snapWorld(getWorldPos(e));
+      const rawWorld = getWorldPos(e);
+      const world = snapWorld(rawWorld);
 
       if (activeTool === "select") {
-        const resizeHit = getResizeHandleAtPoint(world);
+        const resizeHit = getResizeHandleAtPoint(rawWorld);
         if (resizeHit) {
           const initial = elements.find((el) => el.id === resizeHit.id);
           if (initial) {
@@ -204,12 +214,12 @@ export function Canvas() {
             return;
           }
         }
-        const hit = getElementAtPoint(elements, world.x, world.y);
+        const hit = getElementAtPoint(elements, rawWorld.x, rawWorld.y);
         if (hit) {
           if (isNodeTool(hit.type)) {
             const b = getBounds(hit);
-            const nearInput = Math.abs(world.x - b.minX) < 10;
-            const nearOutput = Math.abs(world.x - b.minX - b.w) < 10;
+            const nearInput = Math.abs(rawWorld.x - b.minX) < 10;
+            const nearOutput = Math.abs(rawWorld.x - b.minX - b.w) < 10;
             if (nearOutput) {
               clearSelection();
               selectElements([hit.id]);
@@ -240,8 +250,8 @@ export function Canvas() {
 
       if (activeTool === "text") {
         const el = newElement("text", world.x, world.y);
-        el.height = 20;
-        el.width = 80;
+        el.height = 48;
+        el.width = 180;
         el.text = "";
         addElement(el);
         selectElements([el.id]);
@@ -439,8 +449,8 @@ export function Canvas() {
         selectElements([el.id]);
       } else if (toolId === "text") {
         const el = newElement("text", world.x, world.y);
-        el.height = 20;
-        el.width = 80;
+        el.height = 48;
+        el.width = 180;
         el.text = "";
         addElement(el);
         selectElements([el.id]);
@@ -459,6 +469,22 @@ export function Canvas() {
     [camera, addElement, addElements, selectElements, setActiveTool, addToast]
   );
 
+  const onDoubleClick = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const screenPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const world = screenToWorld(screenPos, camera);
+      const hit = getElementAtPoint(elements, world.x, world.y);
+      if (hit?.type !== "text") return;
+      e.preventDefault();
+      setDrag({ kind: "none" });
+      selectElements([hit.id]);
+      setEditingTextId(hit.id);
+    },
+    [camera, elements, selectElements]
+  );
+
   const cursor =
     drag.kind === "pan"
       ? "grabbing"
@@ -472,8 +498,12 @@ export function Canvas() {
     ? elements.find((el) => el.id === editingTextId)
     : null;
   const editingScreen = editingEl
-    ? worldToScreen({ x: editingEl.x, y: editingEl.y }, camera)
+    ? worldToScreen(
+        { x: getBounds(editingEl).minX, y: getBounds(editingEl).minY },
+        camera
+      )
     : null;
+  const editingBounds = editingEl ? getBounds(editingEl) : null;
 
   function commitText(value: string) {
     if (!editingTextId) return;
@@ -608,6 +638,7 @@ export function Canvas() {
         onContextMenu={onContextMenu}
         onDragOver={onDragOver}
         onDrop={onDrop}
+        onDoubleClick={onDoubleClick}
       >
         <g
           style={{
@@ -701,24 +732,28 @@ export function Canvas() {
         </g>
       </svg>
       {editingScreen && editingEl && (
-        <input
+        <textarea
           ref={inputRef}
-          autoFocus
           defaultValue={editingEl.text || ""}
           onBlur={(e) => commitText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") commitText(e.currentTarget.value);
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              commitText(e.currentTarget.value);
+            }
             if (e.key === "Escape") {
               if (!editingEl.text) removeElements([editingEl.id]);
               setEditingTextId(null);
             }
           }}
-          className="absolute z-10 border border-neutral-900 bg-white px-1.5 py-0.5 text-sm text-neutral-900 outline-none"
+          className="absolute z-10 resize-none rounded-sm border border-neutral-900 bg-white px-1.5 py-1 text-neutral-900 outline-none"
           style={{
             left: editingScreen.x,
             top: editingScreen.y,
-            minWidth: 80,
+            width: editingBounds ? Math.max(120, editingBounds.w * camera.zoom) : 160,
+            height: editingBounds ? Math.max(44, editingBounds.h * camera.zoom) : 48,
             fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            fontSize: editingEl ? getTextEditorFontSize(editingEl, camera.zoom) : 16,
+            lineHeight: 1.15,
           }}
         />
       )}
@@ -731,6 +766,11 @@ export function Canvas() {
       />
     </div>
   );
+}
+
+function getTextEditorFontSize(element: CanvasElement, zoom: number) {
+  const { h } = getBounds(element);
+  return Math.max(12, Math.min(96, Math.max(h, 20) * 0.6) * zoom);
 }
 
 function zoomAt(

@@ -100,16 +100,38 @@ export function Shape({ element }: { element: CanvasElement }) {
       break;
     case "text":
       shape = (
-        <text
-          x={element.x}
-          y={element.y + (Math.abs(element.height) || 16)}
-          fill={element.stroke}
-          fontSize={16}
-          fontFamily="ui-sans-serif, system-ui, sans-serif"
-          dominantBaseline="hanging"
-        >
-          {element.text || "Text"}
-        </text>
+        <g>
+          <rect
+            x={minX}
+            y={minY}
+            width={w}
+            height={h}
+            fill="transparent"
+          />
+          <foreignObject
+            x={minX}
+            y={minY}
+            width={Math.max(w, 1)}
+            height={Math.max(h, 1)}
+            pointerEvents="none"
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                overflow: "hidden",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                fontFamily: "ui-sans-serif, system-ui, sans-serif",
+                fontSize: getTextFontSize(element),
+                lineHeight: 1.15,
+                color: element.text ? element.stroke : "#a3a3a3",
+              }}
+            >
+              {element.text || "Text"}
+            </div>
+          </foreignObject>
+        </g>
       );
       break;
     default:
@@ -407,4 +429,9 @@ function Arrow({ element }: { element: CanvasElement }) {
       <polygon points={`${x2},${y2} ${hx1},${hy1} ${hx2},${hy2}`} />
     </g>
   );
+}
+
+function getTextFontSize(element: CanvasElement) {
+  const { h } = getBounds(element);
+  return Math.max(12, Math.min(96, Math.max(h, 20) * 0.6));
 }
