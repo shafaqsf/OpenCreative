@@ -74,6 +74,8 @@ type CanvasContextValue = {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  runWorkflow?: () => void;
+  setRunWorkflow: (fn: (() => void) | undefined) => void;
 };
 
 const CanvasContext = createContext<CanvasContextValue | null>(null);
@@ -134,6 +136,7 @@ export function CanvasProvider({
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
   const [mounted, setMounted] = useState(false);
+  const [runWorkflow, setRunWorkflow] = useState<(() => void) | undefined>(undefined);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -526,6 +529,8 @@ export function CanvasProvider({
       redo: redo,
       canUndo: canUndo,
       canRedo: canRedo,
+      runWorkflow,
+      setRunWorkflow,
     }),
     [
       elements,
@@ -562,6 +567,8 @@ export function CanvasProvider({
       redo,
       canUndo,
       canRedo,
+      runWorkflow,
+      setRunWorkflow,
     ]
   );
 

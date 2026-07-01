@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { FolderPlus } from "lucide-react";
-import { listFolders, listProjects, createFolder, createProject } from "@/lib/projects/service";
+import { listFolders, listProjects, createFolder, createProject, deleteFolder, deleteProject, updateProjectFolder } from "@/lib/projects/service";
 import { CreateFolderDialog } from "@/components/dashboard/create-folder-dialog";
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 
@@ -18,6 +18,24 @@ export default async function DashboardPage() {
   async function handleCreateProject(name: string) {
     "use server";
     await createProject({ name });
+    revalidatePath("/");
+  }
+
+  async function handleDeleteFolder(id: string) {
+    "use server";
+    await deleteFolder(id);
+    revalidatePath("/");
+  }
+
+  async function handleDeleteProject(id: string) {
+    "use server";
+    await deleteProject(id);
+    revalidatePath("/");
+  }
+
+  async function handleMoveProject(id: string, folderId: string | null) {
+    "use server";
+    await updateProjectFolder(id, folderId);
     revalidatePath("/");
   }
 
@@ -40,6 +58,8 @@ export default async function DashboardPage() {
           folders={folders}
           allProjects={allProjects}
           onCreateProject={handleCreateProject}
+          onDeleteFolder={handleDeleteFolder}
+          onDeleteProject={handleDeleteProject}
         />
       </div>
     </>

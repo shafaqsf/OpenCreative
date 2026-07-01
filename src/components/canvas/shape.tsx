@@ -3,6 +3,7 @@
 import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
+import { useCanvas } from "@/lib/canvas/context";
 
 const NODE_COLORS: Record<NodeType, string> = {
   prompt: "#fafafa",
@@ -134,6 +135,7 @@ function WorkflowNode({
   const strokeColor =
     status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : border;
   const strokeW = status === "running" ? 2 : 1.5;
+  const { runWorkflow } = useCanvas();
 
   const displayUrl = outputUrl || (outputUrls && outputUrls.length > 0 ? outputUrls[0] : undefined);
   const showMedia = (status === "done" || status === "idle") && displayUrl;
@@ -274,35 +276,83 @@ function WorkflowNode({
               style={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 10,
-                color: "#a3a3a3",
+                gap: 6,
+                padding: "0 12px",
               }}
             >
-              {nodeType === "generate"
-                ? "Ready to generate"
-                : nodeType === "output"
-                  ? "Awaiting result"
-                  : nodeType === "prompt"
-                    ? "Text input"
-                    : "Media input"}
+              {nodeType === "generate" ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    runWorkflow?.();
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "5px 14px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: "#fff",
+                    background: "#171717",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    lineHeight: 1,
+                  }}
+                >
+                  Run
+                </button>
+              ) : nodeType === "output" ? (
+                <span style={{ fontSize: 10, color: "#a3a3a3" }}>Awaiting result</span>
+              ) : nodeType === "prompt" ? (
+                <span style={{ fontSize: 10, color: "#a3a3a3" }}>Text input</span>
+              ) : (
+                <span style={{ fontSize: 10, color: "#a3a3a3" }}>Media input</span>
+              )}
             </div>
           )}
 
-          {status === "done" && !displayUrl && nodeType !== "output" && (
+          {status === "done" && !displayUrl && nodeType === "generate" && (
             <div
               style={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 10,
-                color: "#525252",
-                fontWeight: 500,
+                gap: 6,
+                padding: "0 12px",
               }}
             >
-              Done
+              <span style={{ fontSize: 10, color: "#525252", fontWeight: 500 }}>
+                Done
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  runWorkflow?.();
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 10px",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: "#525252",
+                  background: "#f5f5f4",
+                  border: "1px solid #e5e5e4",
+                  borderRadius: 4,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+              >
+                Re-run
+              </button>
             </div>
           )}
         </div>

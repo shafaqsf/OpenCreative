@@ -54,12 +54,12 @@ export function PinButton({
       }}
       className={`rounded p-1 transition-colors ${
         pinned
-          ? "text-blue-600 hover:bg-blue-50"
+          ? "bg-blue-100 text-blue-600"
           : "text-neutral-300 hover:bg-neutral-100 hover:text-neutral-500"
       }`}
       title={pinned ? "Unpin project" : "Pin project"}
     >
-      <Pin className={`size-3.5 ${pinned ? "fill-current" : ""}`} />
+      <Pin className={`size-3.5 ${pinned ? "fill-blue-600" : ""}`} />
     </button>
   );
 }

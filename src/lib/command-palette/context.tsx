@@ -104,9 +104,12 @@ export function useCommandPalette() {
 export function useRegisterCommands(commands: Command[]) {
   const { register, unregister } = useCommandPalette();
   const id = useId();
-  const isFirst = useRef(true);
+  const idsRef = useRef("");
 
   useEffect(() => {
+    const ids = commands.map((c) => c.id).join(",");
+    if (ids === idsRef.current) return;
+    idsRef.current = ids;
     register(id, commands);
   }, [commands, id, register]);
 

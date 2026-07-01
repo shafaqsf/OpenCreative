@@ -97,9 +97,30 @@ export async function updateProjectWorkflow(
   return { ...data, workflow: normalizeWorkflow(data.workflow) };
 }
 
+export async function updateProjectFolder(
+  id: string,
+  folderId: string | null
+): Promise<Project> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
 export async function deleteProject(id: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("folders").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
 

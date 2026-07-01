@@ -13,6 +13,7 @@ import {
   ArrowDownAZ,
   Clock,
   Calendar,
+  Trash2,
 } from "lucide-react";
 import type { Folder as FolderType, Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
@@ -27,10 +28,14 @@ export function DashboardContent({
   folders,
   allProjects,
   onCreateProject,
+  onDeleteFolder,
+  onDeleteProject,
 }: {
   folders: FolderType[];
   allProjects: Project[];
   onCreateProject: (name: string) => void;
+  onDeleteFolder?: (id: string) => void;
+  onDeleteProject?: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -123,26 +128,39 @@ export function DashboardContent({
                 : "grid-cols-1"
             }`}
           >
-            {filteredFolders.map((folder) => {
+              {filteredFolders.map((folder) => {
               const count = allProjects.filter(
                 (p) => p.folder_id === folder.id
               ).length;
               return (
-                <Link
+                <div
                   key={folder.id}
-                  href={`/folder/${folder.id}`}
-                  className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-900"
+                  className="group relative"
                 >
-                  <FolderOpen className="size-5 text-neutral-400" />
-                  <div>
-                    <p className="text-sm font-medium text-neutral-900">
-                      {folder.name}
-                    </p>
-                    <p className="text-xs text-neutral-500">
-                      {count} project{count !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                </Link>
+                  <Link
+                    href={`/folder/${folder.id}`}
+                    className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-900"
+                  >
+                    <FolderOpen className="size-5 text-neutral-400" />
+                    <div>
+                      <p className="text-sm font-medium text-neutral-900">
+                        {folder.name}
+                      </p>
+                      <p className="text-xs text-neutral-500">
+                        {count} project{count !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  </Link>
+                  {onDeleteFolder && (
+                    <button
+                      onClick={() => onDeleteFolder(folder.id)}
+                      className="absolute right-2 top-2 p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100 transition-opacity"
+                      title="Delete folder"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -173,6 +191,7 @@ export function DashboardContent({
                 project={project}
                 pinned={pinned.has(project.id)}
                 onTogglePin={toggle}
+                onDeleteProject={onDeleteProject}
               />
             ))}
           </div>
@@ -184,6 +203,7 @@ export function DashboardContent({
                 project={project}
                 pinned={pinned.has(project.id)}
                 onTogglePin={toggle}
+                onDeleteProject={onDeleteProject}
               />
             ))}
           </div>
@@ -198,10 +218,12 @@ function ProjectCard({
   project,
   pinned,
   onTogglePin,
+  onDeleteProject,
 }: {
   project: Project;
   pinned: boolean;
   onTogglePin: (id: string) => void;
+  onDeleteProject?: (id: string) => void;
 }) {
   return (
     <Link
@@ -222,7 +244,21 @@ function ProjectCard({
           <p className="text-sm font-medium text-neutral-900 line-clamp-1">
             {project.name}
           </p>
-          <MoreHorizontal className="size-4 text-neutral-300 opacity-0 group-hover:opacity-100" />
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+            {onDeleteProject && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  onDeleteProject(project.id);
+                }}
+                className="p-1 text-neutral-400 hover:text-red-600"
+                title="Delete project"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+            <MoreHorizontal className="size-4 text-neutral-300" />
+          </div>
         </div>
         <p className="text-xs text-neutral-500">Canvas workflow</p>
       </div>
@@ -234,10 +270,12 @@ function ProjectListItem({
   project,
   pinned,
   onTogglePin,
+  onDeleteProject,
 }: {
   project: Project;
   pinned: boolean;
   onTogglePin: (id: string) => void;
+  onDeleteProject?: (id: string) => void;
 }) {
   return (
     <Link
@@ -253,6 +291,18 @@ function ProjectListItem({
       </div>
       <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
         <PinButton projectId={project.id} pinned={pinned} onToggle={onTogglePin} />
+        {onDeleteProject && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              onDeleteProject(project.id);
+            }}
+            className="p-1 text-neutral-400 hover:text-red-600"
+            title="Delete project"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        )}
         <MoreHorizontal className="size-4 text-neutral-300" />
       </div>
     </Link>

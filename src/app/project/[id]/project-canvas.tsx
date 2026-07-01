@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResizableHandle,
   useResizablePanel,
@@ -9,7 +9,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Loader2,
-  Play,
   MousePointer2,
   Square,
   Circle,
@@ -112,6 +111,7 @@ function ProjectCanvasInner({
     toggleShowGrid,
     alignSelection,
     distributeSelection,
+    setRunWorkflow,
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
@@ -120,257 +120,12 @@ function ProjectCanvasInner({
 
   useKeyboardShortcuts();
 
-  useRegisterCommands([
-    {
-      id: "tool-select",
-      title: "Select tool",
-      section: "Tools",
-      shortcut: "V",
-      icon: <MousePointer2 className="size-3.5" />,
-      onSelect: () => setActiveTool("select"),
-    },
-    {
-      id: "tool-rectangle",
-      title: "Rectangle tool",
-      section: "Tools",
-      shortcut: "R",
-      icon: <Square className="size-3.5" />,
-      onSelect: () => setActiveTool("rectangle"),
-    },
-    {
-      id: "tool-ellipse",
-      title: "Ellipse tool",
-      section: "Tools",
-      shortcut: "O",
-      icon: <Circle className="size-3.5" />,
-      onSelect: () => setActiveTool("ellipse"),
-    },
-    {
-      id: "tool-triangle",
-      title: "Triangle tool",
-      section: "Tools",
-      shortcut: "G",
-      icon: <Triangle className="size-3.5" />,
-      onSelect: () => setActiveTool("triangle"),
-    },
-    {
-      id: "tool-diamond",
-      title: "Diamond tool",
-      section: "Tools",
-      shortcut: "H",
-      icon: <Diamond className="size-3.5" />,
-      onSelect: () => setActiveTool("diamond"),
-    },
-    {
-      id: "tool-star",
-      title: "Star tool",
-      section: "Tools",
-      shortcut: "S",
-      icon: <Star className="size-3.5" />,
-      onSelect: () => setActiveTool("star"),
-    },
-    {
-      id: "tool-line",
-      title: "Line tool",
-      section: "Tools",
-      shortcut: "L",
-      icon: <Minus className="size-3.5" />,
-      onSelect: () => setActiveTool("line"),
-    },
-    {
-      id: "tool-arrow",
-      title: "Arrow tool",
-      section: "Tools",
-      shortcut: "A",
-      icon: <ArrowRight className="size-3.5" />,
-      onSelect: () => setActiveTool("arrow"),
-    },
-    {
-      id: "tool-text",
-      title: "Text tool",
-      section: "Tools",
-      shortcut: "T",
-      icon: <Type className="size-3.5" />,
-      onSelect: () => setActiveTool("text"),
-    },
-    {
-      id: "tool-draw",
-      title: "Draw tool",
-      section: "Tools",
-      shortcut: "D",
-      icon: <PenLine className="size-3.5" />,
-      onSelect: () => setActiveTool("draw"),
-    },
-    {
-      id: "node-prompt",
-      title: "Prompt node",
-      section: "Nodes",
-      icon: <FileText className="size-3.5" />,
-      onSelect: () => setActiveTool("prompt"),
-    },
-    {
-      id: "node-source",
-      title: "Source node",
-      section: "Nodes",
-      icon: <ImageIcon className="size-3.5" />,
-      onSelect: () => setActiveTool("source"),
-    },
-    {
-      id: "node-generate",
-      title: "Generate node",
-      section: "Nodes",
-      icon: <Sparkles className="size-3.5" />,
-      onSelect: () => setActiveTool("generate"),
-    },
-    {
-      id: "node-output",
-      title: "Output node",
-      section: "Nodes",
-      icon: <Monitor className="size-3.5" />,
-      onSelect: () => setActiveTool("output"),
-    },
-    {
-      id: "workflow-run",
-      title: "Run workflow",
-      section: "Workflow",
-      icon: <Play className="size-3.5" />,
-      onSelect: handleRun,
-    },
-    {
-      id: "edit-undo",
-      title: "Undo",
-      section: "Edit",
-      shortcut: "Ctrl+Z",
-      icon: <RotateCcw className="size-3.5" />,
-      onSelect: () => canUndo && undo(),
-    },
-    {
-      id: "edit-redo",
-      title: "Redo",
-      section: "Edit",
-      shortcut: "Ctrl+Shift+Z",
-      icon: <Redo className="size-3.5" />,
-      onSelect: () => canRedo && redo(),
-    },
-    {
-      id: "edit-duplicate",
-      title: "Duplicate selection",
-      section: "Edit",
-      shortcut: "Ctrl+D",
-      icon: <Copy className="size-3.5" />,
-      onSelect: duplicateSelection,
-    },
-    {
-      id: "edit-delete",
-      title: "Delete selection",
-      section: "Edit",
-      shortcut: "Del",
-      icon: <Trash2 className="size-3.5" />,
-      onSelect: () => selectedIds.length > 0 && removeElements(selectedIds),
-    },
-    {
-      id: "align-left",
-      title: "Align left",
-      section: "Align",
-      onSelect: () => selectedIds.length >= 2 && alignSelection("left"),
-    },
-    {
-      id: "align-center-h",
-      title: "Align center horizontally",
-      section: "Align",
-      onSelect: () => selectedIds.length >= 2 && alignSelection("center-h"),
-    },
-    {
-      id: "align-right",
-      title: "Align right",
-      section: "Align",
-      onSelect: () => selectedIds.length >= 2 && alignSelection("right"),
-    },
-    {
-      id: "align-top",
-      title: "Align top",
-      section: "Align",
-      onSelect: () => selectedIds.length >= 2 && alignSelection("top"),
-    },
-    {
-      id: "align-center-v",
-      title: "Align center vertically",
-      section: "Align",
-      onSelect: () => selectedIds.length >= 2 && alignSelection("center-v"),
-    },
-    {
-      id: "align-bottom",
-      title: "Align bottom",
-      section: "Align",
-      onSelect: () => selectedIds.length >= 2 && alignSelection("bottom"),
-    },
-    {
-      id: "view-reset-zoom",
-      title: "Reset zoom",
-      section: "View",
-      icon: <ZoomIn className="size-3.5" />,
-      onSelect: () => setCamera({ x: 0, y: 0, zoom: 1 }),
-    },
-    {
-      id: "view-fit",
-      title: "Fit to view",
-      section: "View",
-      icon: <Maximize className="size-3.5" />,
-      onSelect: () => setCamera({ x: 0, y: 0, zoom: 1 }),
-    },
-    {
-      id: "view-toggle-grid",
-      title: "Toggle grid",
-      section: "View",
-      icon: <Grid3X3 className="size-3.5" />,
-      onSelect: toggleShowGrid,
-    },
-    {
-      id: "view-toggle-snap",
-      title: "Toggle snap to grid",
-      section: "View",
-      icon: <Magnet className="size-3.5" />,
-      onSelect: toggleSnapToGrid,
-    },
-  ]);
-
-  useEffect(() => {
-    const nowConnections = connections;
-    for (const gen of elements) {
-      if (gen.type !== "generate" || !gen.nodeData) continue;
-      const count = Math.max(1, parseInt(gen.nodeData.properties.count || "1", 10));
-
-      const outConns = nowConnections.filter((c) => c.fromId === gen.id);
-      const existingOut: string[] = outConns
-        .map((c) => c.toId)
-        .filter((id) => elements.find((e) => e.id === id)?.type === "output");
-
-      const genBounds = { x: gen.x, y: gen.y, w: gen.width, h: gen.height };
-
-      if (existingOut.length > count) {
-        const toRemove = existingOut.slice(count);
-        removeElements(toRemove);
-      } else if (existingOut.length < count) {
-        for (let i = existingOut.length; i < count; i++) {
-          const outX = genBounds.x + genBounds.w + 60;
-          const outY = genBounds.y + i * 80;
-          const outEl = newNode("output", outX, outY);
-          outEl.nodeData!.properties.outputIndex = String(i);
-          addElement(outEl);
-          addConnection(gen.id, outEl.id);
-        }
-      }
-    }
-  }, [elements, connections, addElement, addConnection, removeElements]);
-
-  async function handleRun() {
+  const handleRun = useCallback(async () => {
     if (running) return;
     setRunning(true);
 
     const nowElements = elements;
     const nowConnections = connections;
-    const getOutputsNow = (nodeId: string) =>
-      nowConnections.filter((c) => c.fromId === nodeId).map((c) => c.toId);
 
     for (const gen of nowElements) {
       if (gen.type !== "generate" || !gen.nodeData) continue;
@@ -514,7 +269,245 @@ function ProjectCanvasInner({
     } finally {
       setRunning(false);
     }
-  }
+  }, [elements, connections, running, addElement, addConnection, removeElements, updateNodeStatus, addToast]);
+
+  const commands = useMemo(
+    () => [
+      {
+        id: "tool-select",
+        title: "Select tool",
+        section: "Tools",
+        shortcut: "V",
+        icon: <MousePointer2 className="size-3.5" />,
+        onSelect: () => setActiveTool("select"),
+      },
+      {
+        id: "tool-rectangle",
+        title: "Rectangle tool",
+        section: "Tools",
+        shortcut: "R",
+        icon: <Square className="size-3.5" />,
+        onSelect: () => setActiveTool("rectangle"),
+      },
+      {
+        id: "tool-ellipse",
+        title: "Ellipse tool",
+        section: "Tools",
+        shortcut: "O",
+        icon: <Circle className="size-3.5" />,
+        onSelect: () => setActiveTool("ellipse"),
+      },
+      {
+        id: "tool-triangle",
+        title: "Triangle tool",
+        section: "Tools",
+        shortcut: "G",
+        icon: <Triangle className="size-3.5" />,
+        onSelect: () => setActiveTool("triangle"),
+      },
+      {
+        id: "tool-diamond",
+        title: "Diamond tool",
+        section: "Tools",
+        shortcut: "H",
+        icon: <Diamond className="size-3.5" />,
+        onSelect: () => setActiveTool("diamond"),
+      },
+      {
+        id: "tool-star",
+        title: "Star tool",
+        section: "Tools",
+        shortcut: "S",
+        icon: <Star className="size-3.5" />,
+        onSelect: () => setActiveTool("star"),
+      },
+      {
+        id: "tool-line",
+        title: "Line tool",
+        section: "Tools",
+        shortcut: "L",
+        icon: <Minus className="size-3.5" />,
+        onSelect: () => setActiveTool("line"),
+      },
+      {
+        id: "tool-arrow",
+        title: "Arrow tool",
+        section: "Tools",
+        shortcut: "A",
+        icon: <ArrowRight className="size-3.5" />,
+        onSelect: () => setActiveTool("arrow"),
+      },
+      {
+        id: "tool-text",
+        title: "Text tool",
+        section: "Tools",
+        shortcut: "T",
+        icon: <Type className="size-3.5" />,
+        onSelect: () => setActiveTool("text"),
+      },
+      {
+        id: "tool-draw",
+        title: "Draw tool",
+        section: "Tools",
+        shortcut: "D",
+        icon: <PenLine className="size-3.5" />,
+        onSelect: () => setActiveTool("draw"),
+      },
+      {
+        id: "node-prompt",
+        title: "Prompt node",
+        section: "Nodes",
+        icon: <FileText className="size-3.5" />,
+        onSelect: () => setActiveTool("prompt"),
+      },
+      {
+        id: "node-source",
+        title: "Source node",
+        section: "Nodes",
+        icon: <ImageIcon className="size-3.5" />,
+        onSelect: () => setActiveTool("source"),
+      },
+      {
+        id: "node-generate",
+        title: "Generate node",
+        section: "Nodes",
+        icon: <Sparkles className="size-3.5" />,
+        onSelect: () => setActiveTool("generate"),
+      },
+      {
+        id: "node-output",
+        title: "Output node",
+        section: "Nodes",
+        icon: <Monitor className="size-3.5" />,
+        onSelect: () => setActiveTool("output"),
+      },
+      {
+        id: "workflow-run",
+        title: "Run workflow",
+        section: "Workflow",
+        icon: <Play className="size-3.5" />,
+        onSelect: handleRun,
+      },
+      {
+        id: "edit-undo",
+        title: "Undo",
+        section: "Edit",
+        shortcut: "Ctrl+Z",
+        icon: <RotateCcw className="size-3.5" />,
+        onSelect: () => canUndo && undo(),
+      },
+      {
+        id: "edit-redo",
+        title: "Redo",
+        section: "Edit",
+        shortcut: "Ctrl+Shift+Z",
+        icon: <Redo className="size-3.5" />,
+        onSelect: () => canRedo && redo(),
+      },
+      {
+        id: "edit-duplicate",
+        title: "Duplicate selection",
+        section: "Edit",
+        shortcut: "Ctrl+D",
+        icon: <Copy className="size-3.5" />,
+        onSelect: duplicateSelection,
+      },
+      {
+        id: "edit-delete",
+        title: "Delete selection",
+        section: "Edit",
+        shortcut: "Del",
+        icon: <Trash2 className="size-3.5" />,
+        onSelect: () => selectedIds.length > 0 && removeElements(selectedIds),
+      },
+      {
+        id: "align-left",
+        title: "Align left",
+        section: "Align",
+        onSelect: () => selectedIds.length >= 2 && alignSelection("left"),
+      },
+      {
+        id: "align-center-h",
+        title: "Align center horizontally",
+        section: "Align",
+        onSelect: () => selectedIds.length >= 2 && alignSelection("center-h"),
+      },
+      {
+        id: "align-right",
+        title: "Align right",
+        section: "Align",
+        onSelect: () => selectedIds.length >= 2 && alignSelection("right"),
+      },
+      {
+        id: "align-top",
+        title: "Align top",
+        section: "Align",
+        onSelect: () => selectedIds.length >= 2 && alignSelection("top"),
+      },
+      {
+        id: "align-center-v",
+        title: "Align center vertically",
+        section: "Align",
+        onSelect: () => selectedIds.length >= 2 && alignSelection("center-v"),
+      },
+      {
+        id: "align-bottom",
+        title: "Align bottom",
+        section: "Align",
+        onSelect: () => selectedIds.length >= 2 && alignSelection("bottom"),
+      },
+      {
+        id: "view-reset-zoom",
+        title: "Reset zoom",
+        section: "View",
+        icon: <ZoomIn className="size-3.5" />,
+        onSelect: () => setCamera({ x: 0, y: 0, zoom: 1 }),
+      },
+      {
+        id: "view-fit",
+        title: "Fit to view",
+        section: "View",
+        icon: <Maximize className="size-3.5" />,
+        onSelect: () => setCamera({ x: 0, y: 0, zoom: 1 }),
+      },
+      {
+        id: "view-toggle-grid",
+        title: "Toggle grid",
+        section: "View",
+        icon: <Grid3X3 className="size-3.5" />,
+        onSelect: toggleShowGrid,
+      },
+      {
+        id: "view-toggle-snap",
+        title: "Toggle snap to grid",
+        section: "View",
+        icon: <Magnet className="size-3.5" />,
+        onSelect: toggleSnapToGrid,
+      },
+    ],
+    [
+      setActiveTool,
+      handleRun,
+      canUndo,
+      undo,
+      canRedo,
+      redo,
+      duplicateSelection,
+      selectedIds,
+      removeElements,
+      alignSelection,
+      setCamera,
+      toggleShowGrid,
+      toggleSnapToGrid,
+    ]
+  );
+
+  useRegisterCommands(commands);
+
+  useEffect(() => {
+    setRunWorkflow(handleRun);
+    return () => setRunWorkflow(undefined);
+  }, [handleRun, setRunWorkflow]);
 
   return (
     <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-white text-neutral-900">
@@ -539,18 +532,6 @@ function ProjectCanvasInner({
             </span>
           )}
           <OutputGalleryButton />
-          <button
-            onClick={handleRun}
-            disabled={running}
-            className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-          >
-            {running ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Play className="size-3.5" />
-            )}
-            {running ? "Running…" : "Run"}
-          </button>
         </div>
       </header>
 
