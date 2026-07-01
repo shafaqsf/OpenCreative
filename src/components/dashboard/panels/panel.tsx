@@ -18,7 +18,7 @@ export function Panel({
     <section className="border-b border-neutral-200">
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500 hover:text-neutral-900 transition-colors"
+        className="flex w-full items-center gap-1.5 px-4 py-2.5 text-left text-xs font-semibold text-neutral-500 hover:text-neutral-900 transition-colors"
       >
         <ChevronRight
           className={`size-3 transition-transform ${open ? "rotate-90" : ""}`}

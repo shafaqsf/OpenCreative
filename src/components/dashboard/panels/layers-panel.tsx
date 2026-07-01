@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Layers, X } from "lucide-react";
+import { Layers, Pencil, X } from "lucide-react";
 import { Panel } from "./panel";
 import { useCanvas } from "@/lib/canvas/context";
 
@@ -77,6 +77,13 @@ export function LayersPanel() {
                       {name}
                     </span>
                   )}
+                </button>
+                <button
+                  onClick={() => startRename(el.id)}
+                  title="Rename layer"
+                  className="p-1 text-neutral-400 opacity-0 transition-opacity hover:text-neutral-900 group-hover:opacity-100"
+                >
+                  <Pencil className="size-3" />
                 </button>
                 <button
                   onClick={() => removeElements([el.id])}

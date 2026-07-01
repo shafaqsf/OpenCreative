@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { FolderPlus } from "lucide-react";
+import { useToast } from "@/lib/toast/context";
 
 export function CreateFolderDialog({
   onCreate,
@@ -10,11 +11,13 @@ export function CreateFolderDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const { addToast } = useToast();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     onCreate(name.trim());
+    addToast({ title: "Folder created", message: `"${name.trim()}" was created.`, variant: "success", duration: 3000 });
     setName("");
     setOpen(false);
   }

@@ -9,12 +9,19 @@ export type Folder = {
   created_at: string;
 };
 
+export type ProjectConfig = {
+  pinned?: boolean;
+  archived?: boolean;
+  archived_at?: string | null;
+  [key: string]: unknown;
+};
+
 export type Project = {
   id: string;
   folder_id: string | null;
   name: string;
   workflow: WorkflowState;
-  config: Record<string, unknown>;
+  config: ProjectConfig;
   created_at: string;
   updated_at: string;
 };
@@ -39,6 +46,18 @@ export async function createFolder(name: string): Promise<Folder> {
   const { data, error } = await supabase
     .from("folders")
     .insert({ name })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateFolderName(id: string, name: string): Promise<Folder> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("folders")
+    .update({ name })
+    .eq("id", id)
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -82,6 +101,57 @@ export async function createProject(input: ProjectInput): Promise<Project> {
   return { ...data, workflow: normalizeWorkflow(data.workflow) };
 }
 
+export async function updateProjectName(
+  id: string,
+  name: string
+): Promise<Project> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
+export async function updateProjectConfig(
+  id: string,
+  patch: ProjectConfig
+): Promise<Project> {
+  const current = await getProject(id);
+  if (!current) throw new Error("Project not found");
+  const config = { ...current.config, ...patch };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ config, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
+export async function duplicateProject(id: string): Promise<Project> {
+  const current = await getProject(id);
+  if (!current) throw new Error("Project not found");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({
+      folder_id: current.folder_id,
+      name: `${current.name} copy`,
+      workflow: current.workflow,
+      config: { ...current.config, pinned: false, archived: false, archived_at: null },
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
 export async function updateProjectWorkflow(
   id: string,
   workflow: WorkflowState
@@ -97,9 +167,30 @@ export async function updateProjectWorkflow(
   return { ...data, workflow: normalizeWorkflow(data.workflow) };
 }
 
+export async function updateProjectFolder(
+  id: string,
+  folderId: string | null
+): Promise<Project> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ folder_id: folderId, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
 export async function deleteProject(id: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("folders").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
 
@@ -108,6 +199,7 @@ function normalizeWorkflow(raw: unknown): WorkflowState {
     elements: [],
     camera: { x: 0, y: 0, zoom: 1 },
     connections: [],
+    ui: { snapToGrid: true, showGrid: true },
   };
   if (typeof raw !== "object" || raw === null) return empty;
   const w = raw as Record<string, unknown>;
@@ -122,5 +214,9 @@ function normalizeWorkflow(raw: unknown): WorkflowState {
     connections: Array.isArray(w.connections)
       ? (w.connections as Connection[])
       : empty.connections,
+    ui:
+      typeof w.ui === "object" && w.ui !== null
+        ? { ...empty.ui, ...(w.ui as Record<string, boolean>) }
+        : empty.ui,
   };
 }

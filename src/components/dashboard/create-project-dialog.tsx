@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import { useToast } from "@/lib/toast/context";
 
 export function CreateProjectDialog({
   folderId,
@@ -12,11 +13,13 @@ export function CreateProjectDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const { addToast } = useToast();
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     onCreate(name.trim());
+    addToast({ title: "Project created", message: `"${name.trim()}" is ready for editing.`, variant: "success", duration: 3000 });
     setName("");
     setOpen(false);
   }
