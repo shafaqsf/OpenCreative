@@ -52,6 +52,7 @@ type CanvasContextValue = {
   moveElements: (ids: string[], dx: number, dy: number) => void;
   renameElement: (id: string, label: string) => void;
   setCamera: (cam: Camera | ((prev: Camera) => Camera)) => void;
+  replaceWorkflow: (state: WorkflowState) => void;
   bringToFront: (id: string) => void;
   sendToBack: (id: string) => void;
   addConnection: (fromId: string, toId: string) => void;
@@ -242,6 +243,18 @@ export function CanvasProvider({
       setCameraState(cam);
     },
     []
+  );
+
+  const replaceWorkflow = useCallback(
+    (state: WorkflowState) => {
+      setHistory({
+        elements: state.elements,
+        connections: state.connections,
+      });
+      setCameraState(state.camera);
+      setSelectedIds([]);
+    },
+    [setHistory]
   );
 
   const toggleSnapToGrid = useCallback(() => {
@@ -514,6 +527,7 @@ export function CanvasProvider({
       moveElements,
       renameElement,
       setCamera,
+      replaceWorkflow,
       bringToFront,
       sendToBack,
       addConnection,
@@ -550,6 +564,7 @@ export function CanvasProvider({
       moveElements,
       renameElement,
       setCamera,
+      replaceWorkflow,
       bringToFront,
       sendToBack,
       addConnection,

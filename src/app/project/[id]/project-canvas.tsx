@@ -42,6 +42,7 @@ import { AlignToolbar } from "@/components/canvas/align-toolbar";
 import { MiniMap } from "@/components/canvas/mini-map";
 import { OutputGalleryButton } from "@/components/canvas/output-gallery";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
+import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
@@ -541,6 +542,7 @@ function ProjectCanvasInner({
           className="relative overflow-y-auto border-r border-neutral-200 bg-neutral-50"
           style={{ width: leftPanel.width }}
         >
+          <AIPanel projectId={project.id} projectName={project.name} />
           <ToolsPanel />
           <LayersPanel />
           <ResizableHandle

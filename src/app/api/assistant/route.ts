@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateWorkflowFromPrompt } from "@/lib/ai/agents";
+import { generateWorkflowFromPrompt, runOpenCreativeAgent } from "@/lib/ai/agents";
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -7,12 +7,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "OPENROUTER_API_KEY not configured" }, { status: 500 });
   }
 
-  const { prompt } = await req.json();
+  const { prompt, messages, appState } = await req.json();
   if (!prompt || typeof prompt !== "string") {
     return NextResponse.json({ error: "Prompt required" }, { status: 400 });
   }
 
   try {
+    if (appState) {
+      return NextResponse.json(
+        await runOpenCreativeAgent({
+          input: prompt,
+          messages: Array.isArray(messages) ? messages : [],
+          appState,
+        })
+      );
+    }
     return NextResponse.json(await generateWorkflowFromPrompt(prompt));
   } catch (err) {
     return NextResponse.json(
