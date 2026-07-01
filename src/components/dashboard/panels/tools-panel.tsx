@@ -8,6 +8,9 @@ import {
   ArrowRight,
   Type,
   PenLine,
+  Triangle,
+  Diamond,
+  Star,
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
@@ -23,6 +26,9 @@ const tools: {
   { id: "select", label: "Select", Icon: MousePointer2, shortcut: "V" },
   { id: "rectangle", label: "Rectangle", Icon: Square, shortcut: "R" },
   { id: "ellipse", label: "Ellipse", Icon: Circle, shortcut: "O" },
+  { id: "triangle", label: "Triangle", Icon: Triangle, shortcut: "G" },
+  { id: "diamond", label: "Diamond", Icon: Diamond, shortcut: "H" },
+  { id: "star", label: "Star", Icon: Star, shortcut: "S" },
   { id: "line", label: "Line", Icon: Minus, shortcut: "L" },
   { id: "arrow", label: "Arrow", Icon: ArrowRight, shortcut: "A" },
   { id: "text", label: "Text", Icon: Type, shortcut: "T" },

@@ -28,6 +28,33 @@ export function Shape({ element }: { element: CanvasElement }) {
         />
       );
       break;
+    case "triangle":
+      shape = (
+        <polygon
+          points={`${minX + w / 2},${minY} ${minX + w},${minY + h} ${minX},${minY + h}`}
+          {...props}
+          strokeLinejoin="round"
+        />
+      );
+      break;
+    case "diamond":
+      shape = (
+        <polygon
+          points={`${minX + w / 2},${minY} ${minX + w},${minY + h / 2} ${minX + w / 2},${minY + h} ${minX},${minY + h / 2}`}
+          {...props}
+          strokeLinejoin="round"
+        />
+      );
+      break;
+    case "star":
+      shape = (
+        <polygon
+          points={starPoints(minX + w / 2, minY + h / 2, w / 2, h / 2)}
+          {...props}
+          strokeLinejoin="round"
+        />
+      );
+      break;
     case "line":
       shape = (
         <line
@@ -72,6 +99,22 @@ export function Shape({ element }: { element: CanvasElement }) {
   }
 
   return <g>{shape}</g>;
+}
+
+function starPoints(cx: number, cy: number, rx: number, ry: number) {
+  const outer: [number, number][] = [];
+  const inner: [number, number][] = [];
+  const spikes = 5;
+  for (let i = 0; i < spikes; i++) {
+    const a = (Math.PI * 2 * i) / spikes - Math.PI / 2;
+    const a2 = (Math.PI * 2 * (i + 0.5)) / spikes - Math.PI / 2;
+    outer.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+    inner.push([cx + (rx * 0.4) * Math.cos(a2), cy + (ry * 0.4) * Math.sin(a2)]);
+  }
+  return outer
+    .flatMap((p, i) => [p, inner[i]])
+    .map((p) => p.join(","))
+    .join(" ");
 }
 
 function Arrow({ element }: { element: CanvasElement }) {

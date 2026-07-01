@@ -191,8 +191,9 @@ export function Canvas() {
 
   const onPointerUp = useCallback(() => {
     if (drag.kind === "create") {
-      const w = Math.abs(drag.el.width);
-      const h = Math.abs(drag.el.height);
+      const current = elements.find((el) => el.id === drag.el.id);
+      const w = Math.abs(current?.width ?? drag.el.width);
+      const h = Math.abs(current?.height ?? drag.el.height);
       if (w < 3 && h < 3) {
         removeElements([drag.el.id]);
       } else {
