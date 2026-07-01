@@ -19,7 +19,7 @@ import {
 import { newNode, uid, useCanvas } from "@/lib/canvas/context";
 import { useToast } from "@/lib/toast/context";
 import type { AgentAction, AgentMessage, AgentResponse } from "@/types/agent";
-import type { NodeType, ToolId, WorkflowState } from "@/types/canvas";
+import type { ToolId, WorkflowState } from "@/types/canvas";
 
 type ChatState = {
   id: string;
@@ -173,7 +173,7 @@ export function AIPanel({
     switch (action.type) {
       case "create_nodes": {
         const created = action.nodes.map((node) => {
-          const el = newNode(node.type as NodeType, node.x, node.y);
+          const el = newNode(node.type, node.x, node.y);
           el.nodeData!.properties = {
             ...el.nodeData!.properties,
             ...(node.properties ?? {}),

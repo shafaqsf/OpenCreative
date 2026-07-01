@@ -16,11 +16,13 @@ export type AgentAppState = {
   activeTool: ToolId;
 };
 
+type AgentNodeType = Exclude<NodeType, "output">;
+
 export type AgentAction =
   | {
       type: "create_nodes";
       nodes: {
-        type: NodeType;
+        type: AgentNodeType;
         x: number;
         y: number;
         properties?: Record<string, string>;

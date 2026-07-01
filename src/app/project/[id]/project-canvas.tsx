@@ -150,17 +150,55 @@ function ProjectCanvasInner({
     alignSelection,
     distributeSelection,
     setRunWorkflow,
+    updateNodeStatus,
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
+  const [queueCount, setQueueCount] = useState(0);
+  const runningRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const queueRef = useRef(0);
   const leftPanel = useResizablePanel("left", 224, { min: 180, max: 360 });
   const rightPanel = useResizablePanel("right", 256, { min: 200, max: 400 });
 
   useKeyboardShortcuts();
 
+  const cancelRun = useCallback(() => {
+    cancelledRef.current = true;
+    queueRef.current = 0;
+    setQueueCount(0);
+    for (const el of elements) {
+      if (el.nodeData && (el.nodeData.status === "running" || el.nodeData.status === "idle")) {
+        updateNodeStatus(el.id, "idle");
+      }
+    }
+    setRunning(false);
+    runningRef.current = false;
+    addToast({ title: "Workflow cancelled", message: "Generation stopped.", variant: "info" });
+  }, [elements, updateNodeStatus, addToast]);
+
+  const handleRunRef = useRef<() => void>(() => {});
+  const processQueueRef = useRef<() => void>(() => {});
+  const processQueue = useCallback(() => {
+    if (queueRef.current > 0) {
+      queueRef.current--;
+      setQueueCount(queueRef.current);
+      handleRunRef.current();
+    }
+  }, []);
+  processQueueRef.current = processQueue;
+
   const handleRun = useCallback(async () => {
-    if (running) return;
+    if (runningRef.current) {
+      queueRef.current++;
+      setQueueCount(queueRef.current);
+      addToast({ title: "Workflow queued", message: "Added to queue — waiting for current run to finish.", variant: "info" });
+      return;
+    }
+
+    runningRef.current = true;
     setRunning(true);
+    cancelledRef.current = false;
 
     let anyError = false;
     let anySaveError = false;
@@ -221,6 +259,8 @@ function ProjectCanvasInner({
       }
 
       for (const generateId of prepared.generateIds) {
+        if (cancelledRef.current) break;
+
         const generateNode = getNode(workingElements, generateId);
         if (!generateNode) continue;
 
@@ -253,6 +293,7 @@ function ProjectCanvasInner({
 
         const results = await Promise.all(
           Array.from({ length: count }, async (_, index) => {
+            if (cancelledRef.current) return { index, result: { error: "Cancelled" } };
             const result = await runGeneration({
               prompt: input.prompt,
               model: selectedModel.id,
@@ -263,6 +304,13 @@ function ProjectCanvasInner({
             return { index, result };
           })
         );
+
+        if (cancelledRef.current) {
+          setNodeState(generateId, { status: "idle" });
+          outputIds.forEach((id) => setNodeState(id, { status: "idle" }));
+          flushRunState();
+          break;
+        }
 
         const allUrls: string[] = [];
         let lastError: string | undefined;
@@ -326,7 +374,9 @@ function ProjectCanvasInner({
         flushRunState();
       }
 
-      if (anyError && anySaveError) {
+      if (cancelledRef.current) {
+        addToast({ title: "Workflow cancelled", message: "Generation was stopped.", variant: "info" });
+      } else if (anyError && anySaveError) {
         addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anyError) {
         addToast({ title: "Workflow finished with errors", message: "Generation failed. Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
@@ -342,9 +392,15 @@ function ProjectCanvasInner({
         variant: "error",
       });
     } finally {
+      runningRef.current = false;
       setRunning(false);
+      if (!cancelledRef.current) {
+        processQueueRef.current();
+      }
     }
-  }, [elements, connections, running, project.id, replaceWorkflowGraph, commitWorkflowGraph, addToast]);
+  }, [elements, connections, project.id, replaceWorkflowGraph, commitWorkflowGraph, addToast]);
+
+  handleRunRef.current = handleRun;
 
   const commands = useMemo(
     () => [
@@ -635,6 +691,24 @@ function ProjectCanvasInner({
             <span className="flex items-center gap-1.5 text-xs text-neutral-400">
               <Loader2 className="size-3 animate-spin" />
               Saving…
+            </span>
+          )}
+
+          {running && (
+            <button
+              onClick={cancelRun}
+              className="flex items-center gap-1.5 rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+              title="Cancel running workflow"
+            >
+              <Square className="size-3" />
+              Stop
+            </button>
+          )}
+
+          {queueCount > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-amber-600">
+              <Loader2 className="size-3 animate-spin" />
+              {queueCount} queued
             </span>
           )}
 
