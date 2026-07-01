@@ -89,7 +89,12 @@ export function uid() {
 
 function loadFromStorage(): WorkflowState {
   if (typeof window === "undefined")
-    return { elements: [], camera: { x: 0, y: 0, zoom: 1 }, connections: [] };
+    return {
+      elements: [],
+      camera: { x: 0, y: 0, zoom: 1 },
+      connections: [],
+      ui: { snapToGrid: true, showGrid: true },
+    };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw)
@@ -99,9 +104,15 @@ function loadFromStorage(): WorkflowState {
       elements: parsed.elements ?? [],
       camera: parsed.camera ?? { x: 0, y: 0, zoom: 1 },
       connections: parsed.connections ?? [],
+      ui: parsed.ui ?? { snapToGrid: true, showGrid: true },
     };
   } catch {
-    return { elements: [], camera: { x: 0, y: 0, zoom: 1 }, connections: [] };
+    return {
+      elements: [],
+      camera: { x: 0, y: 0, zoom: 1 },
+      connections: [],
+      ui: { snapToGrid: true, showGrid: true },
+    };
   }
 }
 
@@ -134,8 +145,8 @@ export function CanvasProvider({
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [camera, setCameraState] = useState<Camera>(initialState.camera);
   const [clipboard, setClipboard] = useState<CanvasElement[]>([]);
-  const [snapToGrid, setSnapToGrid] = useState(true);
-  const [showGrid, setShowGrid] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState(initialState.ui?.snapToGrid ?? true);
+  const [showGrid, setShowGrid] = useState(initialState.ui?.showGrid ?? true);
   const [mounted, setMounted] = useState(false);
   const [runWorkflow, setRunWorkflowState] = useState<(() => void) | undefined>(undefined);
   const onChangeRef = useRef(onChange);
@@ -150,13 +161,18 @@ export function CanvasProvider({
 
   useEffect(() => {
     if (!mounted) return;
-    const state: WorkflowState = { elements, camera, connections };
+    const state: WorkflowState = {
+      elements,
+      camera,
+      connections,
+      ui: { snapToGrid, showGrid },
+    };
     if (onChangeRef.current) {
       onChangeRef.current(state);
     } else {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
-  }, [elements, camera, connections, mounted]);
+  }, [elements, camera, connections, snapToGrid, showGrid, mounted]);
 
   const addElement = useCallback(
     (el: CanvasElement) => {
@@ -252,6 +268,8 @@ export function CanvasProvider({
         connections: state.connections,
       });
       setCameraState(state.camera);
+      setSnapToGrid(state.ui?.snapToGrid ?? true);
+      setShowGrid(state.ui?.showGrid ?? true);
       setSelectedIds([]);
     },
     [setHistory]

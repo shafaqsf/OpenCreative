@@ -20,6 +20,8 @@ import { SelectionOverlay } from "./selection-overlay";
 import type { CanvasElement, NodeType, Point, ToolId } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 
+type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+
 type DragMode =
   | { kind: "none" }
   | { kind: "pan"; start: Point; camStart: Point }
@@ -36,6 +38,12 @@ type DragMode =
       kind: "move";
       start: Point;
       ids: string[];
+    }
+  | {
+      kind: "resize";
+      id: string;
+      handle: ResizeHandle;
+      initial: CanvasElement;
     }
   | {
       kind: "connect";
@@ -139,6 +147,33 @@ export function Canvas() {
     [elements]
   );
 
+  const getResizeHandleAtPoint = useCallback(
+    (point: Point): { id: string; handle: ResizeHandle } | null => {
+      if (selectedIds.length !== 1) return null;
+      const el = elements.find((item) => item.id === selectedIds[0]);
+      if (!el) return null;
+      const b = getBounds(el);
+      const hit = 8 / camera.zoom;
+      const handles: { handle: ResizeHandle; x: number; y: number }[] = [
+        { handle: "nw", x: b.minX, y: b.minY },
+        { handle: "n", x: b.minX + b.w / 2, y: b.minY },
+        { handle: "ne", x: b.minX + b.w, y: b.minY },
+        { handle: "e", x: b.minX + b.w, y: b.minY + b.h / 2 },
+        { handle: "se", x: b.minX + b.w, y: b.minY + b.h },
+        { handle: "s", x: b.minX + b.w / 2, y: b.minY + b.h },
+        { handle: "sw", x: b.minX, y: b.minY + b.h },
+        { handle: "w", x: b.minX, y: b.minY + b.h / 2 },
+      ];
+      const found = handles.find(
+        (handle) =>
+          Math.abs(point.x - handle.x) <= hit &&
+          Math.abs(point.y - handle.y) <= hit
+      );
+      return found ? { id: el.id, handle: found.handle } : null;
+    },
+    [camera.zoom, elements, selectedIds]
+  );
+
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
       if (e.button === 1 || (e.button === 0 && e.altKey)) {
@@ -155,6 +190,19 @@ export function Canvas() {
       const world = snapWorld(getWorldPos(e));
 
       if (activeTool === "select") {
+        const resizeHit = getResizeHandleAtPoint(world);
+        if (resizeHit) {
+          const initial = elements.find((el) => el.id === resizeHit.id);
+          if (initial) {
+            setDrag({
+              kind: "resize",
+              id: resizeHit.id,
+              handle: resizeHit.handle,
+              initial,
+            });
+            return;
+          }
+        }
         const hit = getElementAtPoint(elements, world.x, world.y);
         if (hit) {
           if (isNodeTool(hit.type)) {
@@ -219,7 +267,7 @@ export function Canvas() {
       addElement(el);
       setDrag({ kind: "create", start: world, el });
     },
-    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, snapWorld, addElement, toggleSelection, selectElements, clearSelection]
+    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, snapWorld, addElement, toggleSelection, selectElements, clearSelection, getResizeHandleAtPoint]
   );
 
   const onPointerMove = useCallback(
@@ -264,6 +312,12 @@ export function Canvas() {
         setGuides(guides);
         moveElements(drag.ids, dx, dy);
         setDrag({ ...drag, start: { x: drag.start.x + dx, y: drag.start.y + dy } });
+        return;
+      }
+
+      if (drag.kind === "resize") {
+        const world = snapWorld(getWorldPos(e));
+        updateElement(drag.id, resizeElement(drag.initial, drag.handle, world));
         return;
       }
 
@@ -694,5 +748,48 @@ function zoomAt(
     zoom: newZoom,
     x: mx - (mx - cam.x) * ratio,
     y: my - (my - cam.y) * ratio,
+  };
+}
+
+function resizeElement(
+  element: CanvasElement,
+  handle: ResizeHandle,
+  point: Point
+): Partial<CanvasElement> {
+  const b = getBounds(element);
+  let minX = b.minX;
+  let minY = b.minY;
+  let maxX = b.minX + b.w;
+  let maxY = b.minY + b.h;
+  const minSize = element.nodeData ? 64 : 8;
+
+  if (handle.includes("w")) minX = Math.min(point.x, maxX - minSize);
+  if (handle.includes("e")) maxX = Math.max(point.x, minX + minSize);
+  if (handle.includes("n")) minY = Math.min(point.y, maxY - minSize);
+  if (handle.includes("s")) maxY = Math.max(point.y, minY + minSize);
+
+  const nextW = maxX - minX;
+  const nextH = maxY - minY;
+
+  if (element.points && element.points.length > 0) {
+    const sx = b.w === 0 ? 1 : nextW / b.w;
+    const sy = b.h === 0 ? 1 : nextH / b.h;
+    return {
+      x: minX,
+      y: minY,
+      width: nextW,
+      height: nextH,
+      points: element.points.map((p) => ({
+        x: minX + (p.x - b.minX) * sx,
+        y: minY + (p.y - b.minY) * sy,
+      })),
+    };
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: nextW,
+    height: nextH,
   };
 }

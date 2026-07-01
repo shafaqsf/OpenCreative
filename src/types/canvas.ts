@@ -63,6 +63,10 @@ export type WorkflowState = {
   elements: CanvasElement[];
   camera: Camera;
   connections: Connection[];
+  ui?: {
+    snapToGrid?: boolean;
+    showGrid?: boolean;
+  };
 };
 
 export const DEFAULT_STROKE = "#111111";

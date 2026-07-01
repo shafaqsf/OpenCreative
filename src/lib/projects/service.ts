@@ -199,6 +199,7 @@ function normalizeWorkflow(raw: unknown): WorkflowState {
     elements: [],
     camera: { x: 0, y: 0, zoom: 1 },
     connections: [],
+    ui: { snapToGrid: true, showGrid: true },
   };
   if (typeof raw !== "object" || raw === null) return empty;
   const w = raw as Record<string, unknown>;
@@ -213,5 +214,9 @@ function normalizeWorkflow(raw: unknown): WorkflowState {
     connections: Array.isArray(w.connections)
       ? (w.connections as Connection[])
       : empty.connections,
+    ui:
+      typeof w.ui === "object" && w.ui !== null
+        ? { ...empty.ui, ...(w.ui as Record<string, boolean>) }
+        : empty.ui,
   };
 }

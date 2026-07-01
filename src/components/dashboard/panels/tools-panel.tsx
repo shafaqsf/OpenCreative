@@ -63,7 +63,7 @@ const nodes: { id: ToolId; label: string; Icon: LucideIcon; desc: string }[] = [
 ];
 
 export function ToolsPanel() {
-  const { activeTool, setActiveTool, addElement, addConnection, elements, selectedIds, connections, selectElements } = useCanvas();
+  const { activeTool, setActiveTool, addElement, addConnection, elements, selectedIds, connections, selectElements, camera } = useCanvas();
   const { addToast } = useToast();
   const [custom, setCustom] = useState<Template[]>(() => loadCustomTemplates());
   const [saveOpen, setSaveOpen] = useState(false);
@@ -139,7 +139,11 @@ export function ToolsPanel() {
   }
 
   function applyTemplateToCanvas(template: Template) {
-    const instance = instantiateTemplateAt(template, { x: 420, y: 240 });
+    const viewportCenter = {
+      x: (window.innerWidth / 2 - camera.x) / camera.zoom,
+      y: (window.innerHeight / 2 - camera.y) / camera.zoom,
+    };
+    const instance = instantiateTemplateAt(template, viewportCenter);
     instance.elements.forEach(addElement);
     instance.connections.forEach((conn) => addConnection(conn.fromId, conn.toId));
     selectElements(instance.elements.map((el) => el.id));
