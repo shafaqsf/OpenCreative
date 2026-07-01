@@ -11,6 +11,7 @@ import { Copy, Trash2, Layers, ArrowUp, ArrowDown, ClipboardPaste, MousePointer2
 import { useCanvas, newElement, newNode, uid } from "@/lib/canvas/context";
 import { screenToWorld, worldToScreen } from "@/lib/canvas/geometry";
 import { getElementAtPoint, getBounds } from "@/lib/canvas/hit-test";
+import { snapPointToGrid, computeAlignmentSnap, type Guide } from "@/lib/canvas/snap";
 import { useToast } from "@/lib/toast/context";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { Shape } from "./shape";
@@ -64,6 +65,8 @@ export function Canvas() {
     duplicateSelection,
     selectAll,
     setActiveTool,
+    snapToGrid,
+    showGrid,
   } = useCanvas();
   const { addToast } = useToast();
 
@@ -81,6 +84,7 @@ export function Canvas() {
     y: number;
     targetId?: string;
   }>({ open: false, x: 0, y: 0 });
+  const [guides, setGuides] = useState<Guide[]>([]);
 
   const getMousePos = useCallback((e: ReactPointerEvent) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -91,6 +95,47 @@ export function Canvas() {
   const getWorldPos = useCallback(
     (e: ReactPointerEvent) => screenToWorld(getMousePos(e), camera),
     [getMousePos, camera]
+  );
+
+  const snapWorld = useCallback(
+    (point: Point) => (snapToGrid ? snapPointToGrid(point) : point),
+    [snapToGrid]
+  );
+
+  const computeMoveSnap = useCallback(
+    (ids: string[], dx: number, dy: number) => {
+      const selected = elements.filter((el) => ids.includes(el.id));
+      if (selected.length === 0) return { dx, dy, guides: [] as Guide[] };
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const el of selected) {
+        const b = getBounds(el);
+        minX = Math.min(minX, b.minX);
+        minY = Math.min(minY, b.minY);
+        maxX = Math.max(maxX, b.minX + b.w);
+        maxY = Math.max(maxY, b.minY + b.h);
+      }
+      const currentBounds = { minX, minY, w: maxX - minX, h: maxY - minY };
+      const nextBounds = {
+        minX: currentBounds.minX + dx,
+        minY: currentBounds.minY + dy,
+        w: currentBounds.w,
+        h: currentBounds.h,
+      };
+      const otherBounds = elements
+        .filter((el) => !ids.includes(el.id))
+        .map(getBounds);
+      const result = computeAlignmentSnap(nextBounds, otherBounds);
+      return {
+        dx: result.bounds.minX - currentBounds.minX,
+        dy: result.bounds.minY - currentBounds.minY,
+        guides: result.guides,
+      };
+    },
+    [elements]
   );
 
   const onPointerDown = useCallback(
@@ -106,7 +151,7 @@ export function Canvas() {
       }
 
       if (e.button !== 0) return;
-      const world = getWorldPos(e);
+      const world = snapWorld(getWorldPos(e));
 
       if (activeTool === "select") {
         const hit = getElementAtPoint(elements, world.x, world.y);
@@ -191,7 +236,7 @@ export function Canvas() {
       }
 
       if (drag.kind === "create") {
-        const world = getWorldPos(e);
+        const world = snapWorld(getWorldPos(e));
         updateElement(drag.el.id, {
           width: world.x - drag.start.x,
           height: world.y - drag.start.y,
@@ -200,7 +245,7 @@ export function Canvas() {
       }
 
       if (drag.kind === "draw") {
-        const world = getWorldPos(e);
+        const world = snapWorld(getWorldPos(e));
         setDrag((prev) => {
           if (prev.kind !== "draw") return prev;
           const points = [...(prev.el.points ?? []), world];
@@ -211,22 +256,24 @@ export function Canvas() {
       }
 
       if (drag.kind === "move") {
-        const world = getWorldPos(e);
-        const dx = world.x - drag.start.x;
-        const dy = world.y - drag.start.y;
+        const world = snapWorld(getWorldPos(e));
+        const rawDx = world.x - drag.start.x;
+        const rawDy = world.y - drag.start.y;
+        const { dx, dy, guides } = computeMoveSnap(drag.ids, rawDx, rawDy);
+        setGuides(guides);
         moveElements(drag.ids, dx, dy);
-        setDrag({ ...drag, start: world });
+        setDrag({ ...drag, start: { x: drag.start.x + dx, y: drag.start.y + dy } });
         return;
       }
 
       if (drag.kind === "connect") {
-        const world = getWorldPos(e);
+        const world = snapWorld(getWorldPos(e));
         setConnectEnd(world);
         return;
       }
 
       if (marquee) {
-        const world = getWorldPos(e);
+        const world = snapWorld(getWorldPos(e));
         setMarquee({ start: marquee.start, end: world });
         return;
       }
@@ -277,6 +324,7 @@ export function Canvas() {
     setDrag({ kind: "none" });
     setMarquee(null);
     setConnectEnd(null);
+    setGuides([]);
   }, [drag, marquee, connectEnd, elements, removeElements, selectElements, addConnection]);
 
   const onWheel = useCallback(
@@ -479,7 +527,7 @@ export function Canvas() {
     <div className="relative h-full w-full">
       <svg
         ref={svgRef}
-        className="canvas-grid h-full w-full touch-none"
+        className={`h-full w-full touch-none ${showGrid ? "canvas-grid" : ""}`}
         style={{ cursor }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -551,6 +599,33 @@ export function Canvas() {
               strokeWidth={1 / camera.zoom}
               strokeDasharray={`${4 / camera.zoom} ${3 / camera.zoom}`}
             />
+          )}
+          {guides.map((g, i) =>
+            g.type === "horizontal" ? (
+              <line
+                key={`h-${i}`}
+                x1={g.x1}
+                y1={g.y}
+                x2={g.x2}
+                y2={g.y}
+                stroke="#2563eb"
+                strokeWidth={1 / camera.zoom}
+                strokeDasharray={`${4 / camera.zoom} ${3 / camera.zoom}`}
+                opacity={0.7}
+              />
+            ) : (
+              <line
+                key={`v-${i}`}
+                x1={g.x}
+                y1={g.y1}
+                x2={g.x}
+                y2={g.y2}
+                stroke="#2563eb"
+                strokeWidth={1 / camera.zoom}
+                strokeDasharray={`${4 / camera.zoom} ${3 / camera.zoom}`}
+                opacity={0.7}
+              />
+            )
           )}
         </g>
       </svg>

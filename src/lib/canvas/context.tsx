@@ -36,8 +36,12 @@ type CanvasContextValue = {
   camera: Camera;
   connections: Connection[];
   clipboard: CanvasElement[];
+  snapToGrid: boolean;
+  showGrid: boolean;
 
   setActiveTool: (tool: ToolId) => void;
+  toggleSnapToGrid: () => void;
+  toggleShowGrid: () => void;
   addElement: (el: CanvasElement) => void;
   updateElement: (id: string, patch: Partial<CanvasElement>) => void;
   removeElements: (ids: string[]) => void;
@@ -117,6 +121,8 @@ export function CanvasProvider({
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [camera, setCameraState] = useState<Camera>(initialState.camera);
   const [clipboard, setClipboard] = useState<CanvasElement[]>([]);
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
   const [mounted, setMounted] = useState(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -224,6 +230,14 @@ export function CanvasProvider({
     },
     []
   );
+
+  const toggleSnapToGrid = useCallback(() => {
+    setSnapToGrid((prev) => !prev);
+  }, []);
+
+  const toggleShowGrid = useCallback(() => {
+    setShowGrid((prev) => !prev);
+  }, []);
 
   const bringToFront = useCallback(
     (id: string) => {
@@ -345,7 +359,11 @@ export function CanvasProvider({
       camera,
       connections,
       clipboard,
+      snapToGrid,
+      showGrid,
       setActiveTool,
+      toggleSnapToGrid,
+      toggleShowGrid,
       addElement,
       updateElement,
       removeElements,
@@ -376,6 +394,8 @@ export function CanvasProvider({
       camera,
       connections,
       clipboard,
+      snapToGrid,
+      showGrid,
       addElement,
       updateElement,
       removeElements,
@@ -394,6 +414,8 @@ export function CanvasProvider({
       copyToClipboard,
       duplicateSelection,
       selectAll,
+      toggleSnapToGrid,
+      toggleShowGrid,
       history.undo,
       history.redo,
       history.canUndo,

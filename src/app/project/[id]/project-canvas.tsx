@@ -26,6 +26,8 @@ import {
   Copy,
   ZoomIn,
   Maximize,
+  Grid3X3,
+  Magnet,
 } from "lucide-react";
 import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
 import { updateProjectWorkflow } from "@/lib/projects/service";
@@ -99,6 +101,8 @@ function ProjectCanvasInner({
     canUndo,
     canRedo,
     duplicateSelection,
+    toggleSnapToGrid,
+    toggleShowGrid,
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
@@ -266,6 +270,20 @@ function ProjectCanvasInner({
       section: "View",
       icon: <Maximize className="size-3.5" />,
       onSelect: () => setCamera({ x: 0, y: 0, zoom: 1 }),
+    },
+    {
+      id: "view-toggle-grid",
+      title: "Toggle grid",
+      section: "View",
+      icon: <Grid3X3 className="size-3.5" />,
+      onSelect: toggleShowGrid,
+    },
+    {
+      id: "view-toggle-snap",
+      title: "Toggle snap to grid",
+      section: "View",
+      icon: <Magnet className="size-3.5" />,
+      onSelect: toggleSnapToGrid,
     },
   ]);
 
