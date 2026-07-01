@@ -282,29 +282,7 @@ export function PropertiesPanel() {
         </div>
       )}
 
-      {(nd.outputUrls && nd.outputUrls.length > 0) && (
-        <div className="px-4 py-3 flex-1 overflow-y-auto">
-          <span className="mb-2 block text-[11px] font-medium text-neutral-500">
-            Outputs ({nd.outputUrls.length})
-          </span>
-          <div className="space-y-1.5">
-            {nd.outputUrls.map((url, i) => (
-              <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 p-2">
-                <span className="text-[10px] font-medium text-neutral-400 w-5 text-center">{i + 1}</span>
-                <a href={url} target="_blank" rel="noreferrer" className="flex-1 truncate text-[10px] text-blue-600 underline decoration-neutral-300 hover:decoration-blue-600">
-                  Output {i + 1}
-                </a>
-                <a href={url} download className="rounded bg-neutral-900 px-2 py-1 text-[10px] font-medium text-white hover:bg-neutral-800">
-                  Download
-                </a>
-              </div>
-            ))}
-          </div>
-          {nd.status === "idle" && (
-            <p className="mt-2 text-[10px] text-neutral-400">Run the workflow to generate outputs.</p>
-          )}
-        </div>
-      )}
+
 
       <div className="px-4 py-3">
         <button

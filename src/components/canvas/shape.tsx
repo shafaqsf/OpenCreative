@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { Pencil } from "lucide-react";
 import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
@@ -157,10 +159,11 @@ function WorkflowNode({
   const strokeColor =
     status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : border;
   const strokeW = status === "running" ? 2 : 1.5;
-  const { runWorkflow } = useCanvas();
+  const { runWorkflow, selectedIds } = useCanvas();
 
   const displayUrl = outputUrl || (outputUrls && outputUrls.length > 0 ? outputUrls[0] : undefined);
-  const showMedia = (status === "done" || status === "idle") && displayUrl;
+  const showMedia = nodeType === "output" && (status === "done" || status === "idle") && displayUrl;
+  const isSelected = selectedIds.includes(element.id);
 
   return (
     <g>
@@ -275,9 +278,11 @@ function WorkflowNode({
               style={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 padding: "2px 6px 6px",
+                gap: 4,
               }}
             >
               <img
@@ -285,11 +290,21 @@ function WorkflowNode({
                 alt=""
                 style={{
                   maxWidth: "100%",
-                  maxHeight: "100%",
+                  maxHeight: isSelected ? "60%" : "100%",
                   objectFit: "contain",
                   borderRadius: 4,
+                  flex: 1,
                 }}
               />
+              {isSelected && (
+                <OutputNodeControls
+                  url={displayUrl!}
+                  outputUrls={outputUrls}
+                  nodeData={nodeData}
+                  elementId={element.id}
+                  index={0}
+                />
+              )}
             </div>
           )}
 
@@ -432,6 +447,122 @@ function Arrow({ element }: { element: CanvasElement }) {
       <line x1={x1} y1={y1} x2={x2} y2={y2} />
       <polygon points={`${x2},${y2} ${hx1},${hy1} ${hx2},${hy2}`} />
     </g>
+  );
+}
+
+function OutputNodeControls({
+  url,
+  outputUrls,
+  nodeData,
+  elementId,
+  index,
+}: {
+  url: string;
+  outputUrls?: string[];
+  nodeData: NodeData;
+  elementId: string;
+  index: number;
+}) {
+  const { updateNodeProperties } = useCanvas();
+  const fmtKey = `fmt_${index}`;
+  const nameKey = `name_${index}`;
+  const format = nodeData.properties[fmtKey] || "png";
+  const [renaming, setRenaming] = useState(false);
+  const [nameInput, setNameInput] = useState(nodeData.properties[nameKey] || "");
+  const fileName = `${nodeData.properties[nameKey] || `output-${index + 1}`}.${format}`;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+      <select
+        value={format}
+        onChange={(e) => updateNodeProperties(elementId, { ...nodeData.properties, [fmtKey]: e.target.value })}
+        style={{
+          fontSize: 10,
+          padding: "1px 4px",
+          borderRadius: 4,
+          border: "1px solid #e5e5e5",
+          background: "#fff",
+          outline: "none",
+          cursor: "pointer",
+          width: 56,
+        }}
+      >
+        <option value="png">PNG</option>
+        <option value="jpg">JPG</option>
+        <option value="webp">WebP</option>
+      </select>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {renaming ? (
+          <input
+            autoFocus
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onBlur={() => {
+              const trimmed = nameInput.trim();
+              updateNodeProperties(elementId, { ...nodeData.properties, [nameKey]: trimmed || `output-${index + 1}` });
+              setRenaming(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const trimmed = nameInput.trim();
+                updateNodeProperties(elementId, { ...nodeData.properties, [nameKey]: trimmed || `output-${index + 1}` });
+                setRenaming(false);
+              }
+              if (e.key === "Escape") { setNameInput(nodeData.properties[nameKey] || ""); setRenaming(false); }
+            }}
+            placeholder="filename"
+            style={{
+              width: "100%",
+              fontSize: 10,
+              padding: "1px 4px",
+              borderRadius: 4,
+              border: "1px solid #d4d4d4",
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+          />
+        ) : (
+          <button
+            onClick={() => { setNameInput(nodeData.properties[nameKey] || `output-${index + 1}`); setRenaming(true); }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              padding: "1px 4px",
+              fontSize: 10,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              color: "#525252",
+              width: "100%",
+              borderRadius: 4,
+            }}
+            title="Rename file"
+          >
+            <Pencil size={10} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {nodeData.properties[nameKey] || `output-${index + 1}`}
+            </span>
+          </button>
+        )}
+      </div>
+      <a
+        href={url}
+        download={fileName}
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          padding: "2px 8px",
+          borderRadius: 4,
+          background: "#171717",
+          color: "#fff",
+          textDecoration: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Download
+      </a>
+    </div>
   );
 }
 
