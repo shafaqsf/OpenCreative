@@ -9,12 +9,19 @@ export type Folder = {
   created_at: string;
 };
 
+export type ProjectConfig = {
+  pinned?: boolean;
+  archived?: boolean;
+  archived_at?: string | null;
+  [key: string]: unknown;
+};
+
 export type Project = {
   id: string;
   folder_id: string | null;
   name: string;
   workflow: WorkflowState;
-  config: Record<string, unknown>;
+  config: ProjectConfig;
   created_at: string;
   updated_at: string;
 };
@@ -39,6 +46,18 @@ export async function createFolder(name: string): Promise<Folder> {
   const { data, error } = await supabase
     .from("folders")
     .insert({ name })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function updateFolderName(id: string, name: string): Promise<Folder> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("folders")
+    .update({ name })
+    .eq("id", id)
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -76,6 +95,57 @@ export async function createProject(input: ProjectInput): Promise<Project> {
   const { data, error } = await supabase
     .from("projects")
     .insert({ folder_id: input.folder_id ?? null, name: input.name })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
+export async function updateProjectName(
+  id: string,
+  name: string
+): Promise<Project> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
+export async function updateProjectConfig(
+  id: string,
+  patch: ProjectConfig
+): Promise<Project> {
+  const current = await getProject(id);
+  if (!current) throw new Error("Project not found");
+  const config = { ...current.config, ...patch };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ config, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
+}
+
+export async function duplicateProject(id: string): Promise<Project> {
+  const current = await getProject(id);
+  if (!current) throw new Error("Project not found");
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({
+      folder_id: current.folder_id,
+      name: `${current.name} copy`,
+      workflow: current.workflow,
+      config: { ...current.config, pinned: false, archived: false, archived_at: null },
+    })
     .select()
     .single();
   if (error) throw new Error(error.message);

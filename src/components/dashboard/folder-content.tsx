@@ -2,10 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Folder, Search, Grid3X3, List } from "lucide-react";
+import { Archive, ArchiveRestore, Copy, Folder, Search, Grid3X3, List, Pencil, Pin, Trash2, FolderX } from "lucide-react";
 import type { Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
-import { PinButton, usePinnedProjects } from "./project-pins";
 import { ProjectThumbnail } from "./project-thumbnail";
 
 type SortKey = "name" | "recent" | "created";
@@ -15,21 +14,38 @@ export function FolderContent({
   folderId,
   projects,
   onCreateProject,
+  onDeleteProject,
+  onArchiveProject,
+  onDuplicateProject,
+  onPinProject,
+  onRenameProject,
+  onRemoveFromFolder,
+  folderName,
 }: {
   folderId: string;
   projects: Project[];
   onCreateProject: (name: string) => void;
+  onDeleteProject?: (id: string) => void;
+  onArchiveProject?: (id: string, archived: boolean) => void;
+  onDuplicateProject?: (id: string) => void;
+  onPinProject?: (id: string, pinned: boolean) => void;
+  onRenameProject?: (id: string, name: string) => void;
+  onRemoveFromFolder?: (id: string) => void;
+  folderName?: string;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [view, setView] = useState<ViewMode>("grid");
-  const { pinned, toggle } = usePinnedProjects();
+  const [showArchived, setShowArchived] = useState(false);
 
   const filteredProjects = useMemo(() => {
-    let result = projects.filter((p) =>
-      p.name.toLowerCase().includes(query.toLowerCase())
-    );
+    let result = projects.filter((p) => {
+      const archived = Boolean(p.config?.archived);
+      return archived === showArchived && p.name.toLowerCase().includes(query.toLowerCase());
+    });
     result.sort((a, b) => {
+      const pinDelta = Number(Boolean(b.config?.pinned)) - Number(Boolean(a.config?.pinned));
+      if (pinDelta !== 0) return pinDelta;
       if (sort === "name") return a.name.localeCompare(b.name);
       if (sort === "created")
         return (
@@ -37,13 +53,13 @@ export function FolderContent({
         );
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
-    result.sort((a, b) => {
-      const ap = pinned.has(a.id) ? 1 : 0;
-      const bp = pinned.has(b.id) ? 1 : 0;
-      return bp - ap;
-    });
     return result;
-  }, [projects, query, sort, pinned]);
+  }, [projects, query, sort, showArchived]);
+
+  function renameProject(project: Project) {
+    const name = window.prompt("Rename project", project.name)?.trim();
+    if (name && name !== project.name) onRenameProject?.(project.id, name);
+  }
 
   return (
     <main className="flex-1 overflow-y-auto p-6">
@@ -67,6 +83,17 @@ export function FolderContent({
             <option value="created">Recently created</option>
             <option value="name">Name</option>
           </select>
+          <button
+            onClick={() => setShowArchived((value) => !value)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm outline-none transition-colors ${
+              showArchived
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+            }`}
+          >
+            {showArchived ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
+            {showArchived ? "Archived" : "Active"}
+          </button>
           <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5">
             <button
               onClick={() => setView("grid")}
@@ -100,61 +127,139 @@ export function FolderContent({
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {filteredProjects.map((project) => (
-            <Link
+            <div
               key={project.id}
-              href={`/project/${project.id}`}
-              className="group relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white hover:border-neutral-900"
+              className="group relative flex flex-col rounded-xl border border-neutral-200 bg-white hover:border-neutral-900"
             >
-              <div className="relative aspect-video w-full overflow-hidden bg-neutral-50 p-2">
-                <ProjectThumbnail
-                  workflow={project.workflow}
-                  className="h-full w-full"
-                />
-                <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
-                  <PinButton
-                    projectId={project.id}
-                    pinned={pinned.has(project.id)}
-                    onToggle={toggle}
+              <Link href={`/project/${project.id}`} className="block">
+                <div className="relative aspect-video w-full overflow-hidden bg-neutral-50 p-2">
+                  <ProjectThumbnail
+                    workflow={project.workflow}
+                    className="h-full w-full"
                   />
                 </div>
+                <div className="p-3 pr-24">
+                  <p className="text-sm font-medium text-neutral-900 line-clamp-1">
+                    {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
+                    {project.name}
+                  </p>
+                  <p className="text-xs text-neutral-500">Canvas workflow</p>
+                </div>
+              </Link>
+              <div className="absolute bottom-3 right-3 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                {onRenameProject && (
+                  <button
+                    onClick={() => renameProject(project)}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                    title="Rename project"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                )}
+                {onRemoveFromFolder && (
+                  <button
+                    onClick={() => onRemoveFromFolder(project.id)}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                    title={`Remove from ${folderName ?? "current folder"}`}
+                  >
+                    <FolderX className="size-3.5" />
+                  </button>
+                )}
+                {onPinProject && !project.config?.archived && (
+                  <button
+                    onClick={() => onPinProject(project.id, !project.config?.pinned)}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                    title={project.config?.pinned ? "Unpin project" : "Pin project"}
+                  >
+                    <Pin className={`size-3.5 ${project.config?.pinned ? "fill-neutral-900 text-neutral-900" : ""}`} />
+                  </button>
+                )}
+                {onDuplicateProject && !project.config?.archived && (
+                  <button
+                    onClick={() => onDuplicateProject(project.id)}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                    title="Duplicate project"
+                  >
+                    <Copy className="size-3.5" />
+                  </button>
+                )}
+                {onArchiveProject && (
+                  <button
+                    onClick={() => onArchiveProject(project.id, !project.config?.archived)}
+                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                    title={project.config?.archived ? "Restore project" : "Archive project"}
+                  >
+                    {project.config?.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
+                  </button>
+                )}
+                {onDeleteProject && (
+                  <button
+                    onClick={() => onDeleteProject(project.id)}
+                    className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                    title="Delete project"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
               </div>
-              <div className="p-3">
-                <p className="text-sm font-medium text-neutral-900 line-clamp-1">
-                  {project.name}
-                </p>
-                <p className="text-xs text-neutral-500">Canvas workflow</p>
-              </div>
-            </Link>
+            </div>
           ))}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           {filteredProjects.map((project) => (
-            <Link
+            <div
               key={project.id}
-              href={`/project/${project.id}`}
               className="group flex items-center gap-4 rounded-xl border border-neutral-200 bg-white p-3 hover:border-neutral-900"
             >
-              <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-50">
-                <ProjectThumbnail
-                  workflow={project.workflow}
-                  className="h-full w-full"
-                />
+              <Link href={`/project/${project.id}`} className="flex min-w-0 flex-1 items-center gap-4">
+                <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-50">
+                  <ProjectThumbnail
+                    workflow={project.workflow}
+                    className="h-full w-full"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-neutral-900">
+                    {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
+                    {project.name}
+                  </p>
+                  <p className="text-xs text-neutral-500">Canvas workflow</p>
+                </div>
+              </Link>
+              <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                {onRenameProject && (
+                  <button onClick={() => renameProject(project)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title="Rename project">
+                    <Pencil className="size-3.5" />
+                  </button>
+                )}
+                {onRemoveFromFolder && (
+                  <button onClick={() => onRemoveFromFolder(project.id)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title={`Remove from ${folderName ?? "current folder"}`}>
+                    <FolderX className="size-3.5" />
+                  </button>
+                )}
+                {onPinProject && !project.config?.archived && (
+                  <button onClick={() => onPinProject(project.id, !project.config?.pinned)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title={project.config?.pinned ? "Unpin project" : "Pin project"}>
+                    <Pin className={`size-3.5 ${project.config?.pinned ? "fill-neutral-900 text-neutral-900" : ""}`} />
+                  </button>
+                )}
+                {onDuplicateProject && !project.config?.archived && (
+                  <button onClick={() => onDuplicateProject(project.id)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title="Duplicate project">
+                    <Copy className="size-3.5" />
+                  </button>
+                )}
+                {onArchiveProject && (
+                  <button onClick={() => onArchiveProject(project.id, !project.config?.archived)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title={project.config?.archived ? "Restore project" : "Archive project"}>
+                    {project.config?.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
+                  </button>
+                )}
+                {onDeleteProject && (
+                  <button onClick={() => onDeleteProject(project.id)} className="rounded p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600" title="Delete project">
+                    <Trash2 className="size-3.5" />
+                  </button>
+                )}
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-neutral-900">
-                  {project.name}
-                </p>
-                <p className="text-xs text-neutral-500">Canvas workflow</p>
-              </div>
-              <div className="opacity-0 transition-opacity group-hover:opacity-100">
-                <PinButton
-                  projectId={project.id}
-                  pinned={pinned.has(project.id)}
-                  onToggle={toggle}
-                />
-              </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

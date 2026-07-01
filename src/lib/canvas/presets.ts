@@ -7,6 +7,9 @@ export type Template = {
   description: string;
   elements: CanvasElement[];
   connections: Connection[];
+  pinned?: boolean;
+  archived?: boolean;
+  updatedAt?: string;
 };
 
 const TEMPLATE_STORAGE_KEY = "opencreative:custom-templates";
@@ -97,7 +100,9 @@ export function loadCustomTemplates(): Template[] {
   try {
     const raw = window.localStorage.getItem(TEMPLATE_STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeTemplate);
   } catch {
     return [];
   }
@@ -105,10 +110,30 @@ export function loadCustomTemplates(): Template[] {
 
 export function saveCustomTemplates(templates: Template[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates));
+  window.localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates.map(normalizeTemplate)));
 }
 
 export function addCustomTemplate(template: Template) {
   const existing = loadCustomTemplates();
   saveCustomTemplates([...existing, template]);
+}
+
+export function normalizeTemplate(template: Template): Template {
+  return {
+    ...template,
+    description: template.description || `${template.elements.length} item${template.elements.length === 1 ? "" : "s"}`,
+    elements: Array.isArray(template.elements) ? template.elements : [],
+    connections: Array.isArray(template.connections) ? template.connections : [],
+    pinned: Boolean(template.pinned),
+    archived: Boolean(template.archived),
+    updatedAt: template.updatedAt ?? new Date().toISOString(),
+  };
+}
+
+export function sortTemplates(templates: Template[]): Template[] {
+  return [...templates].sort((a, b) => {
+    const pinDelta = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+    if (pinDelta !== 0) return pinDelta;
+    return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+  });
 }

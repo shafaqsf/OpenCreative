@@ -136,7 +136,7 @@ export function CanvasProvider({
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const [runWorkflow, setRunWorkflow] = useState<(() => void) | undefined>(undefined);
+  const [runWorkflow, setRunWorkflowState] = useState<(() => void) | undefined>(undefined);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -530,7 +530,7 @@ export function CanvasProvider({
       canUndo: canUndo,
       canRedo: canRedo,
       runWorkflow,
-      setRunWorkflow,
+      setRunWorkflow: (fn) => setRunWorkflowState(() => fn),
     }),
     [
       elements,
@@ -568,7 +568,7 @@ export function CanvasProvider({
       canUndo,
       canRedo,
       runWorkflow,
-      setRunWorkflow,
+      setRunWorkflowState,
     ]
   );
 

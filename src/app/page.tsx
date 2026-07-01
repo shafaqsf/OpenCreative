@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { FolderPlus } from "lucide-react";
-import { listFolders, listProjects, createFolder, createProject, deleteFolder, deleteProject, updateProjectFolder } from "@/lib/projects/service";
+import { listFolders, listProjects, createFolder, createProject, deleteFolder, deleteProject, duplicateProject, updateFolderName, updateProjectConfig, updateProjectFolder, updateProjectName } from "@/lib/projects/service";
 import { CreateFolderDialog } from "@/components/dashboard/create-folder-dialog";
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
 
@@ -27,9 +26,42 @@ export default async function DashboardPage() {
     revalidatePath("/");
   }
 
+  async function handleRenameFolder(id: string, name: string) {
+    "use server";
+    await updateFolderName(id, name);
+    revalidatePath("/");
+  }
+
   async function handleDeleteProject(id: string) {
     "use server";
     await deleteProject(id);
+    revalidatePath("/");
+  }
+
+  async function handleArchiveProject(id: string, archived: boolean) {
+    "use server";
+    await updateProjectConfig(id, {
+      archived,
+      archived_at: archived ? new Date().toISOString() : null,
+    });
+    revalidatePath("/");
+  }
+
+  async function handleDuplicateProject(id: string) {
+    "use server";
+    await duplicateProject(id);
+    revalidatePath("/");
+  }
+
+  async function handlePinProject(id: string, pinned: boolean) {
+    "use server";
+    await updateProjectConfig(id, { pinned });
+    revalidatePath("/");
+  }
+
+  async function handleRenameProject(id: string, name: string) {
+    "use server";
+    await updateProjectName(id, name);
     revalidatePath("/");
   }
 
@@ -59,7 +91,12 @@ export default async function DashboardPage() {
           allProjects={allProjects}
           onCreateProject={handleCreateProject}
           onDeleteFolder={handleDeleteFolder}
+          onRenameFolder={handleRenameFolder}
           onDeleteProject={handleDeleteProject}
+          onArchiveProject={handleArchiveProject}
+          onDuplicateProject={handleDuplicateProject}
+          onPinProject={handlePinProject}
+          onRenameProject={handleRenameProject}
           onMoveProject={handleMoveProject}
         />
       </div>

@@ -19,6 +19,11 @@ import {
   Plus,
   Save,
   Trash2,
+  Archive,
+  ArchiveRestore,
+  Copy,
+  Pencil,
+  Pin,
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
@@ -27,6 +32,7 @@ import {
   getBuiltInTemplates,
   loadCustomTemplates,
   saveCustomTemplates,
+  sortTemplates,
   type Template,
 } from "@/lib/canvas/presets";
 import { useToast } from "@/lib/toast/context";
@@ -71,13 +77,18 @@ function applyTemplate(template: Template, addElement: (el: import("@/types/canv
 }
 
 export function ToolsPanel() {
-  const { activeTool, setActiveTool, addElement, addConnection, elements, selectedIds } = useCanvas();
+  const { activeTool, setActiveTool, addElement, addConnection, elements, selectedIds, connections } = useCanvas();
   const { addToast } = useToast();
   const [custom, setCustom] = useState<Template[]>(() => loadCustomTemplates());
   const [saveOpen, setSaveOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   const builtIn = useMemo(() => getBuiltInTemplates(), []);
+  const visibleCustom = useMemo(
+    () => sortTemplates(custom.filter((template) => Boolean(template.archived) === showArchived)),
+    [custom, showArchived]
+  );
 
   function handleSave() {
     if (!templateName.trim()) return;
@@ -91,7 +102,12 @@ export function ToolsPanel() {
       name: templateName.trim(),
       description: `${selected.length} element${selected.length === 1 ? "" : "s"}`,
       elements: selected,
-      connections: [],
+      connections: connections.filter((conn) =>
+        selectedIds.includes(conn.fromId) && selectedIds.includes(conn.toId)
+      ),
+      pinned: false,
+      archived: false,
+      updatedAt: new Date().toISOString(),
     };
     const next = [...custom, template];
     setCustom(next);
@@ -105,6 +121,38 @@ export function ToolsPanel() {
     const next = custom.filter((t) => t.id !== id);
     setCustom(next);
     saveCustomTemplates(next);
+  }
+
+  function updateTemplate(id: string, patch: Partial<Template>) {
+    const next = custom.map((template) =>
+      template.id === id
+        ? { ...template, ...patch, updatedAt: new Date().toISOString() }
+        : template
+    );
+    setCustom(next);
+    saveCustomTemplates(next);
+  }
+
+  function renameTemplate(template: Template) {
+    const name = window.prompt("Rename template", template.name)?.trim();
+    if (name && name !== template.name) {
+      updateTemplate(template.id, { name });
+    }
+  }
+
+  function duplicateTemplate(template: Template) {
+    const duplicate = {
+      ...template,
+      id: uid(),
+      name: `${template.name} copy`,
+      pinned: false,
+      archived: false,
+      updatedAt: new Date().toISOString(),
+    };
+    const next = [...custom, duplicate];
+    setCustom(next);
+    saveCustomTemplates(next);
+    addToast({ title: "Template duplicated", message: `"${duplicate.name}" saved.`, variant: "success" });
   }
 
   return (
@@ -163,24 +211,44 @@ export function ToolsPanel() {
         </p>
       </Panel>
       <Panel title="Templates" defaultOpen={false}>
+        <div className="mb-2 flex items-center gap-1 rounded-md border border-neutral-200 bg-white p-0.5">
+          <button
+            onClick={() => setShowArchived(false)}
+            className={`flex-1 rounded px-2 py-1 text-[11px] ${!showArchived ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"}`}
+          >
+            Active
+          </button>
+          <button
+            onClick={() => setShowArchived(true)}
+            className={`flex-1 rounded px-2 py-1 text-[11px] ${showArchived ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"}`}
+          >
+            Archived
+          </button>
+        </div>
         <div className="flex flex-col gap-1">
-          {builtIn.map((template) => (
-            <button
-              key={template.id}
-              onClick={() => {
-                applyTemplate(template, addElement, addConnection);
-                addToast({ title: "Template applied", message: `"${template.name}" added to canvas.`, variant: "success", duration: 2000 });
-              }}
-              className="flex items-center gap-2 rounded-md border border-transparent px-2.5 py-2 text-left text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
-            >
-              <LayoutTemplate className="size-3.5" strokeWidth={1.75} />
-              <div className="leading-tight">
-                <div>{template.name}</div>
-                <div className="text-[10px] opacity-60">{template.description}</div>
-              </div>
-            </button>
-          ))}
-          {custom.map((template) => (
+          {!showArchived &&
+            builtIn.map((template) => (
+              <button
+                key={template.id}
+                onClick={() => {
+                  applyTemplate(template, addElement, addConnection);
+                  addToast({ title: "Template applied", message: `"${template.name}" added to canvas.`, variant: "success", duration: 2000 });
+                }}
+                className="flex items-center gap-2 rounded-md border border-transparent px-2.5 py-2 text-left text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+              >
+                <LayoutTemplate className="size-3.5" strokeWidth={1.75} />
+                <div className="leading-tight">
+                  <div>{template.name}</div>
+                  <div className="text-[10px] opacity-60">{template.description}</div>
+                </div>
+              </button>
+            ))}
+          {visibleCustom.length === 0 && (
+            <div className="rounded-md border border-dashed border-neutral-200 px-3 py-5 text-center text-[11px] text-neutral-400">
+              {showArchived ? "No archived templates." : "No custom templates yet."}
+            </div>
+          )}
+          {visibleCustom.map((template) => (
             <div
               key={template.id}
               className="group flex items-center gap-1 rounded-md border border-transparent px-2.5 py-2 text-xs text-neutral-600 hover:bg-neutral-100"
@@ -192,11 +260,43 @@ export function ToolsPanel() {
                 }}
                 className="flex flex-1 items-center gap-2 text-left"
               >
-                <Save className="size-3.5" strokeWidth={1.75} />
+                {template.pinned ? (
+                  <Pin className="size-3.5 fill-neutral-900 text-neutral-900" strokeWidth={1.75} />
+                ) : (
+                  <Save className="size-3.5" strokeWidth={1.75} />
+                )}
                 <div className="leading-tight">
                   <div>{template.name}</div>
                   <div className="text-[10px] opacity-60">{template.description}</div>
                 </div>
+              </button>
+              <button
+                onClick={() => updateTemplate(template.id, { pinned: !template.pinned })}
+                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                title={template.pinned ? "Unpin template" : "Pin template"}
+              >
+                <Pin className={`size-3 ${template.pinned ? "fill-neutral-900 text-neutral-900" : ""}`} />
+              </button>
+              <button
+                onClick={() => renameTemplate(template)}
+                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                title="Rename template"
+              >
+                <Pencil className="size-3" />
+              </button>
+              <button
+                onClick={() => duplicateTemplate(template)}
+                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                title="Duplicate template"
+              >
+                <Copy className="size-3" />
+              </button>
+              <button
+                onClick={() => updateTemplate(template.id, { archived: !template.archived, pinned: false })}
+                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                title={template.archived ? "Restore template" : "Archive template"}
+              >
+                {template.archived ? <ArchiveRestore className="size-3" /> : <Archive className="size-3" />}
               </button>
               <button
                 onClick={() => deleteTemplate(template.id)}

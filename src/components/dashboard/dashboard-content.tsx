@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Folder,
@@ -10,17 +11,18 @@ import {
   Search,
   Grid3X3,
   List,
-  ArrowDownAZ,
-  Clock,
-  Calendar,
   Trash2,
   FolderInput,
   FolderX,
+  Pencil,
+  Archive,
+  ArchiveRestore,
+  Copy,
+  Pin,
 } from "lucide-react";
 import type { Folder as FolderType, Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { DashboardCommands } from "./dashboard-commands";
-import { PinButton, usePinnedProjects } from "./project-pins";
 import { ProjectThumbnail } from "./project-thumbnail";
 
 type SortKey = "name" | "recent" | "created";
@@ -31,26 +33,39 @@ export function DashboardContent({
   allProjects,
   onCreateProject,
   onDeleteFolder,
+  onRenameFolder,
   onDeleteProject,
+  onArchiveProject,
+  onDuplicateProject,
+  onPinProject,
+  onRenameProject,
   onMoveProject,
 }: {
   folders: FolderType[];
   allProjects: Project[];
   onCreateProject: (name: string) => void;
   onDeleteFolder?: (id: string) => void;
+  onRenameFolder?: (id: string, name: string) => void;
   onDeleteProject?: (id: string) => void;
+  onArchiveProject?: (id: string, archived: boolean) => void;
+  onDuplicateProject?: (id: string) => void;
+  onPinProject?: (id: string, pinned: boolean) => void;
+  onRenameProject?: (id: string, name: string) => void;
   onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [view, setView] = useState<ViewMode>("grid");
-  const { pinned, toggle } = usePinnedProjects();
+  const [showArchived, setShowArchived] = useState(false);
 
   const filteredProjects = useMemo(() => {
-    let result = allProjects.filter((p) =>
-      p.name.toLowerCase().includes(query.toLowerCase())
-    );
+    let result = allProjects.filter((p) => {
+      const archived = Boolean(p.config?.archived);
+      return archived === showArchived && p.name.toLowerCase().includes(query.toLowerCase());
+    });
     result.sort((a, b) => {
+      const pinDelta = Number(Boolean(b.config?.pinned)) - Number(Boolean(a.config?.pinned));
+      if (pinDelta !== 0) return pinDelta;
       if (sort === "name") return a.name.localeCompare(b.name);
       if (sort === "created")
         return (
@@ -58,14 +73,13 @@ export function DashboardContent({
         );
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
-    // pinned first
-    result.sort((a, b) => {
-      const ap = pinned.has(a.id) ? 1 : 0;
-      const bp = pinned.has(b.id) ? 1 : 0;
-      return bp - ap;
-    });
     return result;
-  }, [allProjects, query, sort, pinned]);
+  }, [allProjects, query, sort, showArchived]);
+
+  function renameFolder(folder: FolderType) {
+    const name = window.prompt("Rename folder", folder.name)?.trim();
+    if (name && name !== folder.name) onRenameFolder?.(folder.id, name);
+  }
 
   const filteredFolders = useMemo(
     () =>
@@ -97,6 +111,17 @@ export function DashboardContent({
             <option value="created">Recently created</option>
             <option value="name">Name</option>
           </select>
+          <button
+            onClick={() => setShowArchived((value) => !value)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm outline-none transition-colors ${
+              showArchived
+                ? "border-neutral-900 bg-neutral-900 text-white"
+                : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+            }`}
+          >
+            {showArchived ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
+            {showArchived ? "Archived" : "Active"}
+          </button>
           <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5">
             <button
               onClick={() => setView("grid")}
@@ -121,7 +146,7 @@ export function DashboardContent({
       {filteredFolders.length > 0 && (
         <section className="mb-8">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+            <h2 className="text-xs font-semibold text-neutral-500">
               Folders
             </h2>
           </div>
@@ -155,15 +180,26 @@ export function DashboardContent({
                       </p>
                     </div>
                   </Link>
-                  {onDeleteFolder && (
-                    <button
-                      onClick={() => onDeleteFolder(folder.id)}
-                      className="absolute right-2 top-2 p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100 transition-opacity"
-                      title="Delete folder"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  )}
+                  <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {onRenameFolder && (
+                      <button
+                        onClick={() => renameFolder(folder)}
+                        className="rounded p-1 text-neutral-400 hover:bg-white hover:text-neutral-900"
+                        title="Rename folder"
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
+                    )}
+                    {onDeleteFolder && (
+                      <button
+                        onClick={() => onDeleteFolder(folder.id)}
+                        className="rounded p-1 text-neutral-400 hover:bg-white hover:text-red-600"
+                        title="Delete folder"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -173,8 +209,8 @@ export function DashboardContent({
 
       <section>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-            {query ? "Search results" : "Recent projects"}
+          <h2 className="text-xs font-semibold text-neutral-500">
+            {query ? "Search results" : showArchived ? "Archived projects" : "Recent projects"}
           </h2>
           <CreateProjectDialog onCreate={onCreateProject} />
         </div>
@@ -194,9 +230,11 @@ export function DashboardContent({
                 key={project.id}
                 project={project}
                 folders={folders}
-                pinned={pinned.has(project.id)}
-                onTogglePin={toggle}
                 onDeleteProject={onDeleteProject}
+                onArchiveProject={onArchiveProject}
+                onDuplicateProject={onDuplicateProject}
+                onPinProject={onPinProject}
+                onRenameProject={onRenameProject}
                 onMoveProject={onMoveProject}
               />
             ))}
@@ -208,9 +246,11 @@ export function DashboardContent({
                 key={project.id}
                 project={project}
                 folders={folders}
-                pinned={pinned.has(project.id)}
-                onTogglePin={toggle}
                 onDeleteProject={onDeleteProject}
+                onArchiveProject={onArchiveProject}
+                onDuplicateProject={onDuplicateProject}
+                onPinProject={onPinProject}
+                onRenameProject={onRenameProject}
                 onMoveProject={onMoveProject}
               />
             ))}
@@ -225,10 +265,20 @@ export function DashboardContent({
 function ProjectMenu({
   project,
   folders,
+  onRenameProject,
+  onDeleteProject,
+  onArchiveProject,
+  onDuplicateProject,
+  onPinProject,
   onMoveProject,
 }: {
   project: Project;
   folders: FolderType[];
+  onRenameProject?: (id: string, name: string) => void;
+  onDeleteProject?: (id: string) => void;
+  onArchiveProject?: (id: string, archived: boolean) => void;
+  onDuplicateProject?: (id: string) => void;
+  onPinProject?: (id: string, pinned: boolean) => void;
   onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -246,12 +296,23 @@ function ProjectMenu({
   }, [open]);
 
   const availableFolders = folders.filter((f) => f.id !== project.folder_id);
+  const currentFolder = folders.find((f) => f.id === project.folder_id);
+  const isArchived = Boolean(project.config?.archived);
+  const isPinned = Boolean(project.config?.pinned);
+
+  function renameProject() {
+    const name = window.prompt("Rename project", project.name)?.trim();
+    if (name && name !== project.name) onRenameProject?.(project.id, name);
+    setOpen(false);
+  }
 
   return (
-    <div ref={ref} className="relative" onClick={(e) => e.preventDefault()}>
+    <div ref={ref} className="relative">
       <button
+        type="button"
         onClick={(e) => {
           e.stopPropagation();
+          e.preventDefault();
           setOpen((v) => !v);
         }}
         className="p-1 text-neutral-400 hover:text-neutral-700"
@@ -260,9 +321,47 @@ function ProjectMenu({
         <MoreHorizontal className="size-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+          {onRenameProject && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                renameProject();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+            >
+              <Pencil className="size-3.5 text-neutral-400" />
+              Rename project
+            </button>
+          )}
+          {onPinProject && !isArchived && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onPinProject(project.id, !isPinned);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+            >
+              <Pin className={`size-3.5 ${isPinned ? "fill-neutral-900 text-neutral-900" : "text-neutral-400"}`} />
+              {isPinned ? "Unpin project" : "Pin project"}
+            </button>
+          )}
+          {onDuplicateProject && !isArchived && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicateProject(project.id);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+            >
+              <Copy className="size-3.5 text-neutral-400" />
+              Duplicate project
+            </button>
+          )}
           {availableFolders.length > 0 && (
-            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+            <div className="px-3 py-1.5 text-xs font-semibold text-neutral-500">
               Move to folder
             </div>
           )}
@@ -290,13 +389,42 @@ function ProjectMenu({
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
             >
               <FolderX className="size-3.5 text-neutral-400" />
-              Remove from folder
+              Remove from {currentFolder?.name ?? "current folder"}
             </button>
           )}
           {availableFolders.length === 0 && !project.folder_id && (
             <div className="px-3 py-2 text-xs text-neutral-400">
               No other folders
             </div>
+          )}
+          {onDeleteProject && (
+            <>
+              <div className="my-1 border-t border-neutral-100" />
+              {onArchiveProject && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onArchiveProject(project.id, !isArchived);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+                >
+                  {isArchived ? <ArchiveRestore className="size-3.5 text-neutral-400" /> : <Archive className="size-3.5 text-neutral-400" />}
+                  {isArchived ? "Restore project" : "Archive project"}
+                </button>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteProject(project.id);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50"
+              >
+                <Trash2 className="size-3.5" />
+                Delete project
+              </button>
+            </>
           )}
         </div>
       )}
@@ -307,106 +435,118 @@ function ProjectMenu({
 function ProjectCard({
   project,
   folders,
-  pinned,
-  onTogglePin,
   onDeleteProject,
+  onArchiveProject,
+  onDuplicateProject,
+  onPinProject,
+  onRenameProject,
   onMoveProject,
 }: {
   project: Project;
   folders: FolderType[];
-  pinned: boolean;
-  onTogglePin: (id: string) => void;
   onDeleteProject?: (id: string) => void;
+  onArchiveProject?: (id: string, archived: boolean) => void;
+  onDuplicateProject?: (id: string) => void;
+  onPinProject?: (id: string, pinned: boolean) => void;
+  onRenameProject?: (id: string, name: string) => void;
   onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
+  const router = useRouter();
+
   return (
-    <Link
-      href={`/project/${project.id}`}
-      className="group relative flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white hover:border-neutral-900"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/project/${project.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") router.push(`/project/${project.id}`);
+      }}
+      className="group relative flex cursor-pointer flex-col rounded-xl border border-neutral-200 bg-white hover:border-neutral-900"
     >
       <div className="relative aspect-video w-full overflow-hidden bg-neutral-50 p-2">
         <ProjectThumbnail
           workflow={project.workflow}
           className="h-full w-full"
         />
-        <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <PinButton projectId={project.id} pinned={pinned} onToggle={onTogglePin} />
-        </div>
       </div>
       <div className="p-3">
         <div className="mb-1 flex items-start justify-between">
           <p className="text-sm font-medium text-neutral-900 line-clamp-1">
+            {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
             {project.name}
           </p>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100" onClick={(e) => e.preventDefault()}>
-            {onDeleteProject && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteProject(project.id);
-                }}
-                className="p-1 text-neutral-400 hover:text-red-600"
-                title="Delete project"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            )}
-            {onMoveProject && (
-              <ProjectMenu project={project} folders={folders} onMoveProject={onMoveProject} />
-            )}
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+            <ProjectMenu
+              project={project}
+              folders={folders}
+              onRenameProject={onRenameProject}
+              onDeleteProject={onDeleteProject}
+              onArchiveProject={onArchiveProject}
+              onDuplicateProject={onDuplicateProject}
+              onPinProject={onPinProject}
+              onMoveProject={onMoveProject}
+            />
           </div>
         </div>
         <p className="text-xs text-neutral-500">Canvas workflow</p>
       </div>
-    </Link>
+    </div>
   );
 }
 
 function ProjectListItem({
   project,
   folders,
-  pinned,
-  onTogglePin,
   onDeleteProject,
+  onArchiveProject,
+  onDuplicateProject,
+  onPinProject,
+  onRenameProject,
   onMoveProject,
 }: {
   project: Project;
   folders: FolderType[];
-  pinned: boolean;
-  onTogglePin: (id: string) => void;
   onDeleteProject?: (id: string) => void;
+  onArchiveProject?: (id: string, archived: boolean) => void;
+  onDuplicateProject?: (id: string) => void;
+  onPinProject?: (id: string, pinned: boolean) => void;
+  onRenameProject?: (id: string, name: string) => void;
   onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
+  const router = useRouter();
+
   return (
-    <Link
-      href={`/project/${project.id}`}
-      className="group flex items-center gap-4 rounded-xl border border-neutral-200 bg-white p-3 hover:border-neutral-900"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/project/${project.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") router.push(`/project/${project.id}`);
+      }}
+      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-neutral-200 bg-white p-3 hover:border-neutral-900"
     >
       <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-50">
         <ProjectThumbnail workflow={project.workflow} className="h-full w-full" />
       </div>
-      <div className="flex-1">
-        <p className="text-sm font-medium text-neutral-900">{project.name}</p>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-neutral-900 truncate">
+          {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
+          {project.name}
+        </p>
         <p className="text-xs text-neutral-500">Canvas workflow</p>
       </div>
-      <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-        <PinButton projectId={project.id} pinned={pinned} onToggle={onTogglePin} />
-        {onDeleteProject && (
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              onDeleteProject(project.id);
-            }}
-            className="p-1 text-neutral-400 hover:text-red-600"
-            title="Delete project"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
-        )}
-        {onMoveProject && (
-          <ProjectMenu project={project} folders={folders} onMoveProject={onMoveProject} />
-        )}
+      <div className="flex items-center gap-2 shrink-0">
+        <ProjectMenu
+          project={project}
+          folders={folders}
+          onRenameProject={onRenameProject}
+          onDeleteProject={onDeleteProject}
+          onArchiveProject={onArchiveProject}
+          onDuplicateProject={onDuplicateProject}
+          onPinProject={onPinProject}
+          onMoveProject={onMoveProject}
+        />
       </div>
-    </Link>
+    </div>
   );
 }
