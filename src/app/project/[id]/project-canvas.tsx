@@ -63,7 +63,6 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
         setSaving(true);
         try {
           await updateProjectWorkflow(project.id, state);
-          addToast({ title: "Saved", message: "Project workflow saved.", variant: "success", duration: 2000 });
         } catch {
           addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
         } finally {
