@@ -19,6 +19,7 @@ export type PreparedWorkflow = {
   addedElements: CanvasElement[];
   addedConnections: Connection[];
   generateIds: string[];
+  freshOutputIds: Record<string, string[]>;
   issues: string[];
 };
 
@@ -109,6 +110,8 @@ export function prepareWorkflowRun(
     }
   }
 
+  const freshOutputIds: Record<string, string[]> = {};
+
   for (const generate of nextElements) {
     if (!isWorkflowNode(generate) || generate.nodeData.nodeType !== "generate") continue;
 
@@ -121,20 +124,20 @@ export function prepareWorkflowRun(
       count: String(count),
     };
 
-    const existingOutputIds = nextConnections
+    const connectedOutputs = nextConnections
       .filter((conn) => conn.fromId === generate.id)
       .map((conn) => nextElements.find((el) => el.id === conn.toId))
       .filter(
         (el): el is WorkflowNodeElement =>
           isWorkflowNode(el) && el.nodeData.nodeType === "output"
-      )
-      .map((el) => el.id);
+      );
 
-    while (existingOutputIds.length < count) {
+    const fresh: string[] = [];
+    for (let index = 0; index < count; index++) {
       const created = createNode(
         "output",
         generate.x + Math.max(generate.width, 200) + 64,
-        generate.y + existingOutputIds.length * 120
+        generate.y + (connectedOutputs.length + index) * 120
       );
       created.nodeData!.properties = {
         ...created.nodeData!.properties,
@@ -145,18 +148,9 @@ export function prepareWorkflowRun(
       nextConnections.push(conn);
       addedElements.push(created);
       addedConnections.push(conn);
-      existingOutputIds.push(created.id);
+      fresh.push(created.id);
     }
-
-    for (const outputId of existingOutputIds) {
-      const output = nextElements.find((el) => el.id === outputId);
-      if (isWorkflowNode(output)) {
-        output.nodeData.properties = {
-          ...output.nodeData.properties,
-          outputType: model.outputType,
-        };
-      }
-    }
+    freshOutputIds[generate.id] = fresh;
   }
 
   const generateIds = sortGenerateNodes(nextElements, nextConnections, issues);
@@ -166,6 +160,7 @@ export function prepareWorkflowRun(
     addedElements,
     addedConnections,
     generateIds,
+    freshOutputIds,
     issues,
   };
 }
