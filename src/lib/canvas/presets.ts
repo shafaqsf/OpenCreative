@@ -1,4 +1,5 @@
 import { uid, newNode } from "./context";
+import { getGenerationModel } from "./generation-models";
 import type { CanvasElement, Connection, NodeType } from "@/types/canvas";
 import { getBounds } from "./hit-test";
 
@@ -54,27 +55,52 @@ function wire(from: CanvasElement, to: CanvasElement): Connection {
 }
 
 function hydrateTemplates(): Template[] {
+  const imageModel = getGenerationModel("openai/gpt-image-1");
+  const videoModel = getGenerationModel("kwaivgi/kling-v3.0-pro");
   const prompt = buildNode("prompt", 80, 120, {
     content: "A cinematic scene based on the prompt",
   });
-  const generate1 = buildNode("generate", 360, 120);
-  const output1 = buildNode("output", 620, 120, { outputIndex: "0" });
+  const generate1 = buildNode("generate", 360, 120, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+    outputFormat: imageModel.outputFormat,
+  });
+  const output1 = buildNode("output", 620, 120, {
+    outputIndex: "0",
+    outputType: imageModel.outputType,
+    outputFormat: imageModel.outputFormat,
+  });
 
   const source = buildNode("source", 80, 320, { fileType: "image" });
   const prompt2 = buildNode("prompt", 80, 500, {
     content: "Animate this image into a video",
   });
-  const generate2 = buildNode("generate", 360, 320);
-  const output2 = buildNode("output", 620, 320, { outputIndex: "0" });
+  const generate2 = buildNode("generate", 360, 320, {
+    model: videoModel.id,
+    outputType: videoModel.outputType,
+    outputFormat: videoModel.outputFormat,
+  });
+  const output2 = buildNode("output", 620, 320, {
+    outputIndex: "0",
+    outputType: videoModel.outputType,
+    outputFormat: videoModel.outputFormat,
+  });
 
   const prompt3 = buildNode("prompt", 80, 680, {
     content: "Four creative variations",
   });
   const generate3 = buildNode("generate", 360, 520, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+    outputFormat: imageModel.outputFormat,
     count: "4",
   });
   const outputs3 = [0, 1, 2, 3].map((index) =>
-    buildNode("output", 620, 430 + index * 120, { outputIndex: String(index) })
+    buildNode("output", 620, 430 + index * 120, {
+      outputIndex: String(index),
+      outputType: imageModel.outputType,
+      outputFormat: imageModel.outputFormat,
+    })
   );
 
   return [
