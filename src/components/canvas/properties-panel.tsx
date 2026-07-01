@@ -49,10 +49,7 @@ const NODE_CONFIG: Record<
   },
   output: {
     label: "Output",
-    fields: [
-      { key: "outputIndex", label: "Output index", type: "number" },
-      { key: "outputType", label: "Type", type: "readonly" },
-    ],
+    fields: [],
   },
 };
 

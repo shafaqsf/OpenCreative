@@ -293,6 +293,7 @@ function WorkflowNode({
                 justifyContent: "center",
                 padding: "2px 6px 6px",
                 gap: 4,
+                position: "relative",
               }}
             >
               {showVideo ? (
@@ -320,6 +321,24 @@ function WorkflowNode({
                     flex: 1,
                   }}
                 />
+              )}
+              {nodeType === "output" && outputUrls && outputUrls.length > 1 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    background: "rgba(0,0,0,0.65)",
+                    color: "#fff",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: "2px 6px",
+                    borderRadius: 8,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {outputUrls.length}
+                </div>
               )}
               {isSelected && nodeType === "output" && displayUrl && (
                 <OutputNodeControls

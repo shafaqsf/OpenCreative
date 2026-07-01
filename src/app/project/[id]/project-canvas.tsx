@@ -228,20 +228,21 @@ function ProjectCanvasInner({
 
         const selectedModel = getGenerationModel(generateNode.nodeData.properties.model);
         const count = normalizeOutputCount(generateNode.nodeData.properties.count, selectedModel.id);
-        const outputIds = getConnectedOutputIds(workingElements, workingConnections, generateId).slice(0, count);
+        const connectedOutputIds = getConnectedOutputIds(workingElements, workingConnections, generateId);
+        const outputId = connectedOutputIds[0];
         const input = collectGenerateInput(workingElements, workingConnections, generateId);
 
         if (!input.prompt && !input.mediaUrl) {
           const message = "Connect at least one prompt or source before running this generate node.";
           setNodeState(generateId, { status: "error", error: message });
-          outputIds.forEach((outputId) => setNodeState(outputId, { status: "error", error: message }));
+          if (outputId) setNodeState(outputId, { status: "error", error: message });
           flushRunState();
           anyError = true;
           continue;
         }
 
         setNodeState(generateId, { status: "running", error: undefined });
-        outputIds.forEach((outputId) => setNodeState(outputId, { status: "running", error: undefined }));
+        if (outputId) setNodeState(outputId, { status: "running", error: undefined });
         flushRunState();
 
         const results = await Promise.all(
@@ -261,14 +262,15 @@ function ProjectCanvasInner({
         let lastError: string | undefined;
 
         for (const { index, result } of results) {
-          const outputId = outputIds[index];
           if (result.url) {
             allUrls[index] = result.url;
             if (outputId) {
+              const current = workingElements.find((el) => el.id === outputId);
+              const prevUrls = current?.nodeData?.outputUrls ?? [];
               setNodeState(outputId, {
                 status: "done",
                 outputUrl: result.url,
-                outputUrls: [result.url],
+                outputUrls: [...prevUrls, result.url],
                 error: undefined,
               });
             }
@@ -307,7 +309,7 @@ function ProjectCanvasInner({
             successfulResults.map(({ url, index }) =>
               saveGeneratedMedia({
                 projectId: project.id,
-                nodeId: outputIds[index] ?? generateId,
+                nodeId: outputId ?? generateId,
                 outputIndex: index,
                 mediaType: selectedModel.outputType,
                 url,

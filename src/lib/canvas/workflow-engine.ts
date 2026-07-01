@@ -121,41 +121,42 @@ export function prepareWorkflowRun(
       count: String(count),
     };
 
-    for (let i = nextConnections.length - 1; i >= 0; i--) {
-      if (nextConnections[i].fromId === generate.id) {
-        nextConnections.splice(i, 1);
-      }
-    }
+    const existingOutputIds = nextConnections
+      .filter((conn) => conn.fromId === generate.id)
+      .map((conn) => nextElements.find((el) => el.id === conn.toId))
+      .filter(
+        (el): el is WorkflowNodeElement =>
+          isWorkflowNode(el) && el.nodeData.nodeType === "output"
+      )
+      .map((el) => el.id);
 
-    const outputIds: string[] = [];
-    for (let index = 0; index < count; index++) {
-      const output = createNode(
+    while (existingOutputIds.length < count) {
+      const created = createNode(
         "output",
         generate.x + Math.max(generate.width, 200) + 64,
-        generate.y + index * 124
+        generate.y + existingOutputIds.length * 120
       );
-      output.nodeData!.properties = {
-        ...output.nodeData!.properties,
-        outputIndex: String(index),
+      created.nodeData!.properties = {
+        ...created.nodeData!.properties,
         outputType: model.outputType,
       };
-      const connection = { id: uid(), fromId: generate.id, toId: output.id };
-      nextElements.push(output);
-      nextConnections.push(connection);
-      addedElements.push(output);
-      addedConnections.push(connection);
-      outputIds.push(output.id);
+      const conn = { id: uid(), fromId: generate.id, toId: created.id };
+      nextElements.push(created);
+      nextConnections.push(conn);
+      addedElements.push(created);
+      addedConnections.push(conn);
+      existingOutputIds.push(created.id);
     }
 
-    outputIds.forEach((outputId, index) => {
-      const output = nextElements.find((element) => element.id === outputId);
-      if (!isWorkflowNode(output)) return;
-      output.nodeData.properties = {
-        ...output.nodeData.properties,
-        outputIndex: String(index),
-        outputType: model.outputType,
-      };
-    });
+    for (const outputId of existingOutputIds) {
+      const output = nextElements.find((el) => el.id === outputId);
+      if (isWorkflowNode(output)) {
+        output.nodeData.properties = {
+          ...output.nodeData.properties,
+          outputType: model.outputType,
+        };
+      }
+    }
   }
 
   const generateIds = sortGenerateNodes(nextElements, nextConnections, issues);
