@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -11,32 +11,38 @@ import {
   Pencil,
   Pin,
   Plus,
+  RotateCcw,
   Send,
   Sparkles,
   Trash2,
   X,
 } from "lucide-react";
-import { newNode, uid, useCanvas } from "@/lib/canvas/context";
+import { newElement, newNode, uid, useCanvas } from "@/lib/canvas/context";
 import { useToast } from "@/lib/toast/context";
 import type { AgentAction, AgentMessage, AgentResponse } from "@/types/agent";
 import type { ToolId, WorkflowState } from "@/types/canvas";
+import {
+  listAgentChats,
+  createAgentChat,
+  updateAgentChat,
+  deleteAgentChat,
+  listAgentMessages,
+  createAgentMessage,
+  listAgentCheckpoints,
+  createAgentCheckpoint,
+  getAgentCheckpoint,
+} from "@/lib/projects/service";
 
-type ChatState = {
+type LocalChat = {
   id: string;
   title: string;
   pinned: boolean;
   archived: boolean;
   createdAt: string;
   updatedAt: string;
-  messages: AgentMessage[];
 };
 
-type AgentStore = {
-  activeChatId: string;
-  chats: ChatState[];
-};
-
-function newChat(title = "New chat"): ChatState {
+function createLocalChat(title = "New chat"): LocalChat {
   const now = new Date().toISOString();
   return {
     id: uid(),
@@ -45,13 +51,7 @@ function newChat(title = "New chat"): ChatState {
     archived: false,
     createdAt: now,
     updatedAt: now,
-    messages: [],
   };
-}
-
-function createInitialStore(): AgentStore {
-  const chat = newChat("Canvas agent");
-  return { activeChatId: chat.id, chats: [chat] };
 }
 
 export function AIPanel({
@@ -67,48 +67,148 @@ export function AIPanel({
     camera,
     selectedIds,
     activeTool,
+    snapToGrid,
+    showGrid,
     addElements,
+    addConnection,
     removeElements,
     duplicateSelection,
     renameElement,
     runWorkflow,
     setActiveTool,
+    setCamera,
+    replaceWorkflow,
+    commitWorkflowGraph,
+    updateNodeProperties,
   } = useCanvas();
+
   const { addToast } = useToast();
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
-  const [store, setStore] = useState<AgentStore>(() => createInitialStore());
+  const [chats, setChats] = useState<LocalChat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [messagesMap, setMessagesMap] = useState<Record<string, AgentMessage[]>>({});
+  const [checkpointsMap, setCheckpointsMap] = useState<Record<string, { id: string; messageId: string; label: string }[]>>({});
+  const [storeLoading, setStoreLoading] = useState(true);
 
-  const storageKey = `opencreative:agent:${projectId}`;
+  const isLocal = projectId === "local";
+  const localStorageKey = `opencreative:agent:${projectId}`;
 
+  // Hydrate chats
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.chats) && parsed.chats.length > 0) {
-        setStore(parsed);
-        const active = parsed.chats.find((c: ChatState) => c.id === parsed.activeChatId) ?? parsed.chats[0];
-        if (active.messages.length > 0) setTranscriptOpen(true);
+    let cancelled = false;
+    async function init() {
+      if (isLocal) {
+        try {
+          const raw = window.localStorage.getItem(localStorageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.chats) && parsed.chats.length > 0) {
+              setChats(parsed.chats);
+              setActiveChatId(parsed.activeChatId ?? parsed.chats[0].id);
+              if (parsed.messagesMap) setMessagesMap(parsed.messagesMap);
+              if (parsed.checkpointsMap) setCheckpointsMap(parsed.checkpointsMap);
+              if (parsed.messagesMap?.[parsed.activeChatId]?.length > 0) {
+                setTranscriptOpen(true);
+              }
+            } else {
+              const chat = createLocalChat("Canvas agent");
+              setChats([chat]);
+              setActiveChatId(chat.id);
+            }
+          } else {
+            const chat = createLocalChat("Canvas agent");
+            setChats([chat]);
+            setActiveChatId(chat.id);
+          }
+        } catch {}
+        setStoreLoading(false);
         return;
       }
-      if (Array.isArray(parsed.messages)) {
-        const migrated = newChat(parsed.title || "Canvas agent");
-        migrated.pinned = Boolean(parsed.pinned);
-        migrated.archived = Boolean(parsed.archived);
-        migrated.messages = parsed.messages;
-        setStore({ activeChatId: migrated.id, chats: [migrated] });
-        if (migrated.messages.length > 0) setTranscriptOpen(true);
-      }
-    } catch {}
-  }, [storageKey]);
 
+      try {
+        const dbChats = await listAgentChats(projectId);
+        if (cancelled) return;
+        if (dbChats.length > 0) {
+          const localChats = dbChats.map((c) => ({
+            id: c.id,
+            title: c.title,
+            pinned: c.pinned,
+            archived: c.archived,
+            createdAt: c.created_at,
+            updatedAt: c.updated_at,
+          }));
+          setChats(localChats);
+          const first = localChats[0];
+          setActiveChatId(first.id);
+          const [msgs, cps] = await Promise.all([
+            listAgentMessages(first.id),
+            listAgentCheckpoints(first.id),
+          ]);
+          if (cancelled) return;
+          setMessagesMap((prev) => ({
+            ...prev,
+            [first.id]: msgs.map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              createdAt: m.created_at,
+            })),
+          }));
+          setCheckpointsMap((prev) => ({
+            ...prev,
+            [first.id]: cps.map((c) => ({
+              id: c.id,
+              messageId: c.message_id,
+              label: c.label ?? "Before agent actions",
+            })),
+          }));
+          if (msgs.length > 0) setTranscriptOpen(true);
+        } else {
+          const chat = await createAgentChat(projectId, "Canvas agent");
+          if (cancelled) return;
+          const localChat = {
+            id: chat.id,
+            title: chat.title,
+            pinned: chat.pinned,
+            archived: chat.archived,
+            createdAt: chat.created_at,
+            updatedAt: chat.updated_at,
+          };
+          setChats([localChat]);
+          setActiveChatId(localChat.id);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        addToast({
+          title: "Chat load failed",
+          message: err instanceof Error ? err.message : "Could not load chats.",
+          variant: "error",
+        });
+        const chat = createLocalChat("Canvas agent");
+        setChats([chat]);
+        setActiveChatId(chat.id);
+      } finally {
+        if (!cancelled) setStoreLoading(false);
+      }
+    }
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, isLocal, localStorageKey, addToast]);
+
+  // Persist local fallback
   useEffect(() => {
+    if (!isLocal || storeLoading) return;
     try {
-      window.localStorage.setItem(storageKey, JSON.stringify(store));
+      window.localStorage.setItem(
+        localStorageKey,
+        JSON.stringify({ activeChatId, chats, messagesMap, checkpointsMap })
+      );
     } catch {
       addToast({
         title: "Storage limit reached",
@@ -116,60 +216,204 @@ export function AIPanel({
         variant: "warning",
       });
     }
-  }, [storageKey, store, addToast]);
+  }, [isLocal, localStorageKey, activeChatId, chats, messagesMap, checkpointsMap, storeLoading, addToast]);
 
-  const workflow = useMemo<WorkflowState>(
-    () => ({ elements, connections, camera }),
-    [elements, connections, camera]
-  );
+  const loadedChatIdsRef = useRef<Set<string>>(new Set());
+
+  // Load messages & checkpoints when active chat changes (DB only)
+  useEffect(() => {
+    const chatId = activeChatId;
+    if (!chatId || isLocal || storeLoading) return;
+    if (loadedChatIdsRef.current.has(chatId)) return;
+    let cancelled = false;
+    async function load(id: string) {
+      try {
+        const [msgs, cps] = await Promise.all([
+          listAgentMessages(id),
+          listAgentCheckpoints(id),
+        ]);
+        if (cancelled) return;
+        loadedChatIdsRef.current.add(id);
+        setMessagesMap((prev) => ({
+          ...prev,
+          [id]: msgs.map((m) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            createdAt: m.created_at,
+          })),
+        }));
+        setCheckpointsMap((prev) => ({
+          ...prev,
+          [id]: cps.map((c) => ({
+            id: c.id,
+            messageId: c.message_id,
+            label: c.label ?? "Before agent actions",
+          })),
+        }));
+      } catch (err) {
+        if (cancelled) return;
+        addToast({
+          title: "Load messages failed",
+          message: err instanceof Error ? err.message : "Could not load chat messages.",
+          variant: "error",
+        });
+      }
+    }
+    load(chatId);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeChatId, isLocal, storeLoading, addToast]);
 
   const activeChat = useMemo(() => {
-    return store.chats.find((chat) => chat.id === store.activeChatId) ?? store.chats[0];
-  }, [store]);
+    return chats.find((c) => c.id === activeChatId) ?? chats[0] ?? null;
+  }, [chats, activeChatId]);
+
+  const activeMessages = useMemo(() => {
+    return activeChat ? (messagesMap[activeChat.id] ?? []) : [];
+  }, [activeChat, messagesMap]);
+
+  const activeCheckpoints = useMemo(() => {
+    return activeChat ? (checkpointsMap[activeChat.id] ?? []) : [];
+  }, [activeChat, checkpointsMap]);
 
   const visibleChats = useMemo(() => {
-    return [...store.chats]
+    return [...chats]
       .filter((chat) => chat.archived === showArchived)
       .sort((a, b) => {
         const pinDelta = Number(b.pinned) - Number(a.pinned);
         if (pinDelta !== 0) return pinDelta;
         return b.updatedAt.localeCompare(a.updatedAt);
       });
-  }, [store.chats, showArchived]);
+  }, [chats, showArchived]);
 
-  function updateChat(chatId: string, patch: Partial<ChatState>) {
-    setStore((prev) => ({
-      ...prev,
-      chats: prev.chats.map((chat) =>
+  const updateLocalChat = useCallback((chatId: string, patch: Partial<LocalChat>) => {
+    setChats((prev) =>
+      prev.map((chat) =>
         chat.id === chatId ? { ...chat, ...patch, updatedAt: new Date().toISOString() } : chat
-      ),
-    }));
-  }
+      )
+    );
+  }, []);
 
-  function createChat() {
-    const chat = newChat();
-    setStore((prev) => ({
-      activeChatId: chat.id,
-      chats: [chat, ...prev.chats],
-    }));
-    setTranscriptOpen(false);
-    setMenuOpen(false);
-  }
-
-  function deleteChat(chatId: string) {
-    setStore((prev) => {
-      const chats = prev.chats.filter((chat) => chat.id !== chatId);
-      if (chats.length === 0) return createInitialStore();
-      return {
-        activeChatId: prev.activeChatId === chatId ? chats[0].id : prev.activeChatId,
-        chats,
+  async function createChat() {
+    if (isLocal) {
+      const chat = createLocalChat();
+      setChats((prev) => [chat, ...prev]);
+      setActiveChatId(chat.id);
+      setTranscriptOpen(false);
+      setMenuOpen(false);
+      return;
+    }
+    try {
+      const chat = await createAgentChat(projectId);
+      const localChat = {
+        id: chat.id,
+        title: chat.title,
+        pinned: chat.pinned,
+        archived: chat.archived,
+        createdAt: chat.created_at,
+        updatedAt: chat.updated_at,
       };
-    });
+      setChats((prev) => [localChat, ...prev]);
+      setActiveChatId(localChat.id);
+      setTranscriptOpen(false);
+      setMenuOpen(false);
+    } catch (err) {
+      addToast({
+        title: "Create chat failed",
+        message: err instanceof Error ? err.message : "Could not create chat.",
+        variant: "error",
+      });
+    }
   }
 
-  function renameChat(chat: ChatState) {
+  async function handleDeleteChat(chatId: string) {
+    if (!isLocal) {
+      try {
+        await deleteAgentChat(chatId);
+      } catch (err) {
+        addToast({
+          title: "Delete chat failed",
+          message: err instanceof Error ? err.message : "Could not delete chat.",
+          variant: "error",
+        });
+        return;
+      }
+    }
+    const remaining = chats.filter((c) => c.id !== chatId);
+    if (remaining.length === 0) {
+      if (isLocal) {
+        const fresh = createLocalChat("Canvas agent");
+        setChats([fresh]);
+        setActiveChatId(fresh.id);
+      } else {
+        try {
+          const chat = await createAgentChat(projectId, "Canvas agent");
+          const localChat = {
+            id: chat.id,
+            title: chat.title,
+            pinned: chat.pinned,
+            archived: chat.archived,
+            createdAt: chat.created_at,
+            updatedAt: chat.updated_at,
+          };
+          setChats([localChat]);
+          setActiveChatId(localChat.id);
+        } catch (err) {
+          addToast({
+            title: "Delete chat failed",
+            message: err instanceof Error ? err.message : "Could not delete chat.",
+            variant: "error",
+          });
+        }
+      }
+    } else {
+      setChats(remaining);
+      if (activeChatId === chatId) setActiveChatId(remaining[0].id);
+    }
+  }
+
+  async function handleUpdateChat(
+    chatId: string,
+    patch: Partial<Pick<LocalChat, "title" | "pinned" | "archived">>
+  ) {
+    const localPatch: Partial<LocalChat> = { ...patch };
+    if (patch.archived === true) localPatch.pinned = false;
+    updateLocalChat(chatId, localPatch);
+    if (isLocal) return;
+    try {
+      await updateAgentChat(chatId, patch);
+    } catch (err) {
+      addToast({
+        title: "Update chat failed",
+        message: err instanceof Error ? err.message : "Could not update chat.",
+        variant: "error",
+      });
+    }
+  }
+
+  function renameChat(chat: LocalChat) {
     const title = window.prompt("Rename chat", chat.title)?.trim();
-    if (title) updateChat(chat.id, { title });
+    if (title) handleUpdateChat(chat.id, { title });
+  }
+
+  async function restoreCheckpoint(checkpointId: string) {
+    try {
+      const cp = await getAgentCheckpoint(checkpointId);
+      if (!cp) {
+        addToast({ title: "Checkpoint missing", message: "Could not find checkpoint.", variant: "error" });
+        return;
+      }
+      replaceWorkflow(cp.workflow_state);
+      addToast({ title: "Checkpoint restored", message: "Workflow reverted to checkpoint state.", variant: "success" });
+    } catch (err) {
+      addToast({
+        title: "Restore failed",
+        message: err instanceof Error ? err.message : "Could not restore checkpoint.",
+        variant: "error",
+      });
+    }
   }
 
   async function executeAction(action: AgentAction) {
@@ -192,6 +436,78 @@ export function AIPanel({
         addToast({
           title: "Agent updated canvas",
           message: `Created ${created.length} node${created.length === 1 ? "" : "s"}.`,
+          variant: "success",
+        });
+        return;
+      }
+      case "move_nodes": {
+        const nextElements = elements.map((el) => {
+          const update = action.nodes.find((n) => n.id === el.id);
+          if (!update) return el;
+          if (el.points) {
+            const dx = update.x - el.x;
+            const dy = update.y - el.y;
+            return {
+              ...el,
+              x: update.x,
+              y: update.y,
+              points: el.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+            };
+          }
+          return { ...el, x: update.x, y: update.y };
+        });
+        commitWorkflowGraph(nextElements, connections);
+        addToast({
+          title: "Agent updated canvas",
+          message: `Moved ${action.nodes.length} node${action.nodes.length === 1 ? "" : "s"}.`,
+          variant: "success",
+        });
+        return;
+      }
+      case "connect_nodes": {
+        let added = 0;
+        for (const conn of action.connections) {
+          if (addConnection(conn.fromId, conn.toId)) added++;
+        }
+        if (added > 0) {
+          addToast({
+            title: "Agent updated canvas",
+            message: `Connected ${added} node pair${added === 1 ? "" : "s"}.`,
+            variant: "success",
+          });
+        }
+        return;
+      }
+      case "update_node_properties": {
+        updateNodeProperties(action.id, action.properties);
+        addToast({
+          title: "Agent updated node",
+          message: "Updated node properties.",
+          variant: "success",
+        });
+        return;
+      }
+      case "set_camera": {
+        setCamera({ x: action.x, y: action.y, zoom: action.zoom });
+        addToast({
+          title: "Agent updated view",
+          message: "Camera moved to new position.",
+          variant: "success",
+        });
+        return;
+      }
+      case "create_annotations": {
+        const created = action.annotations.map((ann) => {
+          const el = newElement(ann.type, ann.x, ann.y);
+          el.width = ann.width ?? (ann.type === "text" ? 160 : 120);
+          el.height = ann.height ?? (ann.type === "text" ? 40 : 80);
+          if (ann.text) el.text = ann.text;
+          return el;
+        });
+        addElements(created);
+        addToast({
+          title: "Agent updated canvas",
+          message: `Created ${created.length} annotation${created.length === 1 ? "" : "s"}.`,
           variant: "success",
         });
         return;
@@ -226,11 +542,20 @@ export function AIPanel({
       content: prompt.trim(),
       createdAt: new Date().toISOString(),
     };
-    const messages = [...activeChat.messages, userMessage];
+
+    // Optimistically add user message
+    const nextMessages = [...activeMessages, userMessage];
+    setMessagesMap((prev) => ({ ...prev, [activeChat.id]: nextMessages }));
     setPrompt("");
     setTranscriptOpen(true);
-    updateChat(activeChat.id, { messages });
     setLoading(true);
+
+    // Persist user message in background
+    if (!isLocal) {
+      createAgentMessage(activeChat.id, userMessage.role, userMessage.content).catch((err) => {
+        addToast({ title: "Save message failed", message: err instanceof Error ? err.message : "", variant: "error" });
+      });
+    }
 
     try {
       const res = await fetch("/api/assistant", {
@@ -238,10 +563,10 @@ export function AIPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: userMessage.content,
-          messages: activeChat.messages,
+          messages: nextMessages,
           appState: {
             projectName,
-            workflow,
+            workflow: { elements, connections, camera, ui: { snapToGrid, showGrid } },
             selectedIds,
             activeTool,
           },
@@ -256,7 +581,63 @@ export function AIPanel({
         content: json.message,
         createdAt: new Date().toISOString(),
       };
-      updateChat(activeChat.id, { messages: [...messages, assistantMessage] });
+
+      // Persist assistant message
+      let assistantDbId: string | null = null;
+      if (!isLocal) {
+        try {
+          const dbMsg = await createAgentMessage(activeChat.id, assistantMessage.role, assistantMessage.content);
+          assistantDbId = dbMsg.id;
+        } catch (err) {
+          addToast({ title: "Save message failed", message: err instanceof Error ? err.message : "", variant: "error" });
+        }
+      }
+
+      // Update local messages (replace local id with db id if available)
+      const finalMessages = [
+        ...nextMessages,
+        assistantDbId ? { ...assistantMessage, id: assistantDbId } : assistantMessage,
+      ];
+      setMessagesMap((prev) => ({ ...prev, [activeChat.id]: finalMessages }));
+
+      // Save checkpoint before executing actions
+      const currentWorkflow: WorkflowState = {
+        elements,
+        connections,
+        camera,
+        ui: { snapToGrid, showGrid },
+      };
+
+      if (!isLocal && assistantDbId) {
+        try {
+          const cp = await createAgentCheckpoint({
+            chatId: activeChat.id,
+            messageId: assistantDbId,
+            label: "Before agent actions",
+            workflowState: currentWorkflow,
+          });
+          // Attach checkpoint id to the assistant message for UI
+          setMessagesMap((prev) => {
+            const arr = prev[activeChat.id] ?? [];
+            const idx = arr.findIndex((m) => m.id === assistantDbId);
+            if (idx === -1) return prev;
+            const next = [...arr];
+            next[idx] = { ...next[idx], checkpointId: cp.id };
+            return { ...prev, [activeChat.id]: next };
+          });
+          setCheckpointsMap((prev) => ({
+            ...prev,
+            [activeChat.id]: [
+              ...(prev[activeChat.id] ?? []),
+              { id: cp.id, messageId: assistantDbId, label: cp.label ?? "Before agent actions" },
+            ],
+          }));
+        } catch (err) {
+          addToast({ title: "Checkpoint failed", message: err instanceof Error ? err.message : "", variant: "warning" });
+        }
+      }
+
+      // Execute actions
       for (const action of json.actions ?? []) {
         await executeAction(action);
       }
@@ -266,7 +647,6 @@ export function AIPanel({
         message: err instanceof Error ? err.message : "Could not run agent",
         variant: "error",
       });
-      updateChat(activeChat.id, { messages });
     } finally {
       setLoading(false);
     }
@@ -295,22 +675,33 @@ export function AIPanel({
             </button>
           </div>
           <div className="max-h-[34vh] space-y-3 overflow-y-auto p-4">
-            {activeChat.messages.length === 0 ? (
+            {activeMessages.length === 0 ? (
               <div className="py-8 text-center">
                 <Sparkles className="mx-auto mb-2 size-5 text-neutral-300" />
                 <p className="text-sm text-neutral-500">Start by asking the agent to operate this canvas.</p>
               </div>
             ) : (
-              activeChat.messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed ${
-                    message.role === "user"
-                      ? "ml-auto bg-neutral-900 text-white"
-                      : "bg-neutral-100 text-neutral-800"
-                  }`}
-                >
-                  {message.content}
+              activeMessages.map((message) => (
+                <div key={message.id} className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`max-w-[85%] rounded-lg px-3 py-2 text-sm leading-relaxed ${
+                      message.role === "user"
+                        ? "bg-neutral-900 text-white"
+                        : "bg-neutral-100 text-neutral-800"
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                  {message.checkpointId && (
+                    <button
+                      onClick={() => restoreCheckpoint(message.checkpointId!)}
+                      className="mt-1 flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-900"
+                      title="Revert workflow to state before this agent response"
+                    >
+                      <RotateCcw className="size-3" />
+                      Restore checkpoint
+                    </button>
+                  )}
                 </div>
               ))
             )}
@@ -344,7 +735,9 @@ export function AIPanel({
             </button>
           </div>
           <div className="max-h-72 overflow-y-auto p-1">
-            {visibleChats.length === 0 ? (
+            {storeLoading ? (
+              <div className="px-3 py-8 text-center text-xs text-neutral-400">Loading chats…</div>
+            ) : visibleChats.length === 0 ? (
               <div className="px-3 py-8 text-center text-xs text-neutral-400">No chats here.</div>
             ) : (
               visibleChats.map((chat) => (
@@ -356,9 +749,9 @@ export function AIPanel({
                 >
                   <button
                     onClick={() => {
-                      setStore((prev) => ({ ...prev, activeChatId: chat.id }));
+                      setActiveChatId(chat.id);
                       setMenuOpen(false);
-                      setTranscriptOpen(chat.messages.length > 0);
+                      setTranscriptOpen((messagesMap[chat.id] ?? []).length > 0);
                     }}
                     className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
                   >
@@ -366,7 +759,7 @@ export function AIPanel({
                     <span className="truncate text-xs text-neutral-800">{chat.title}</span>
                   </button>
                   <button
-                    onClick={() => updateChat(chat.id, { pinned: !chat.pinned })}
+                    onClick={() => handleUpdateChat(chat.id, { pinned: !chat.pinned })}
                     className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
                     title={chat.pinned ? "Unpin chat" : "Pin chat"}
                   >
@@ -380,14 +773,14 @@ export function AIPanel({
                     <Pencil className="size-3.5" />
                   </button>
                   <button
-                    onClick={() => updateChat(chat.id, { archived: !chat.archived, pinned: false })}
+                    onClick={() => handleUpdateChat(chat.id, { archived: !chat.archived })}
                     className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
                     title={chat.archived ? "Restore chat" : "Archive chat"}
                   >
                     {chat.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
                   </button>
                   <button
-                    onClick={() => deleteChat(chat.id)}
+                    onClick={() => handleDeleteChat(chat.id)}
                     className="rounded p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
                     title="Delete chat"
                   >

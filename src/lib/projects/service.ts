@@ -55,6 +55,40 @@ export type GeneratedMediaInput = {
   sourceUrl?: string;
 };
 
+export type AgentChat = {
+  id: string;
+  project_id: string;
+  title: string;
+  pinned: boolean;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentMessage = {
+  id: string;
+  chat_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+};
+
+export type AgentCheckpoint = {
+  id: string;
+  chat_id: string;
+  message_id: string;
+  label: string | null;
+  workflow_state: WorkflowState;
+  created_at: string;
+};
+
+export type AgentCheckpointInput = {
+  chatId: string;
+  messageId: string;
+  label?: string;
+  workflowState: WorkflowState;
+};
+
 export async function listFolders(): Promise<Folder[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -247,6 +281,140 @@ export async function saveGeneratedMedia(input: GeneratedMediaInput): Promise<Ge
     .single();
   if (error) throw new Error(error.message);
   return data as GeneratedMedia;
+}
+
+export async function listAgentChats(projectId: string): Promise<AgentChat[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_chats")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("pinned", { ascending: false })
+    .order("updated_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AgentChat[];
+}
+
+export async function createAgentChat(
+  projectId: string,
+  title = "New chat"
+): Promise<AgentChat> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_chats")
+    .insert({ project_id: projectId, title })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as AgentChat;
+}
+
+export async function updateAgentChat(
+  id: string,
+  patch: Partial<Pick<AgentChat, "title" | "pinned" | "archived">>
+): Promise<AgentChat> {
+  const supabase = await createClient();
+  const update: Record<string, unknown> = { ...patch, updated_at: new Date().toISOString() };
+  if (patch.archived && patch.pinned === undefined) {
+    update.pinned = false;
+  }
+  const { data, error } = await supabase
+    .from("agent_chats")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as AgentChat;
+}
+
+export async function deleteAgentChat(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("agent_chats").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function listAgentMessages(chatId: string): Promise<AgentMessage[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_messages")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AgentMessage[];
+}
+
+export async function createAgentMessage(
+  chatId: string,
+  role: "user" | "assistant",
+  content: string
+): Promise<AgentMessage> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_messages")
+    .insert({ chat_id: chatId, role, content })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as AgentMessage;
+}
+
+export async function listAgentCheckpoints(chatId: string): Promise<AgentCheckpoint[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_checkpoints")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((c) => ({
+    ...c,
+    workflow_state: normalizeWorkflow(c.workflow_state),
+  })) as AgentCheckpoint[];
+}
+
+export async function createAgentCheckpoint(
+  input: AgentCheckpointInput
+): Promise<AgentCheckpoint> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_checkpoints")
+    .insert({
+      chat_id: input.chatId,
+      message_id: input.messageId,
+      label: input.label ?? null,
+      workflow_state: input.workflowState,
+    })
+    .select()
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Checkpoint creation failed");
+  const row = data as Record<string, unknown>;
+  return {
+    ...row,
+    workflow_state: normalizeWorkflow(row.workflow_state),
+  } as AgentCheckpoint;
+}
+
+export async function getAgentCheckpoint(id: string): Promise<AgentCheckpoint | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("agent_checkpoints")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error || !data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    ...row,
+    workflow_state: normalizeWorkflow(row.workflow_state),
+  } as AgentCheckpoint;
+}
+
+export async function deleteAgentCheckpoint(id: string): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("agent_checkpoints").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 function normalizeWorkflow(raw: unknown): WorkflowState {

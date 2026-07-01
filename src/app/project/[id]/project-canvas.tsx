@@ -61,33 +61,57 @@ import type { NodeStatus, WorkflowState } from "@/types/canvas";
 export function ProjectCanvasEditor({ project }: { project: Project }) {
   const [saving, setSaving] = useState(false);
   const [autoSave, setAutoSave] = useState(true);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveRef = useRef(autoSave);
   autoSaveRef.current = autoSave;
   const latestStateRef = useRef<WorkflowState | null>(null);
+  const saveStateRef = useRef<"idle" | "scheduled" | "saving">("idle");
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { addToast } = useToast();
+
+  const scheduleSave = useCallback(() => {
+    if (saveStateRef.current === "saving") return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveStateRef.current = "scheduled";
+    saveTimerRef.current = setTimeout(async () => {
+      const state = latestStateRef.current;
+      if (!state || !autoSaveRef.current) {
+        saveStateRef.current = "idle";
+        return;
+      }
+      saveStateRef.current = "saving";
+      setSaving(true);
+      const stateAtStart = latestStateRef.current;
+      try {
+        await updateProjectWorkflow(project.id, state);
+      } catch {
+        addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
+      } finally {
+        setSaving(false);
+        saveStateRef.current = "idle";
+        if (latestStateRef.current !== stateAtStart) {
+          scheduleSave();
+        }
+      }
+    }, 600);
+  }, [project.id, addToast]);
 
   const handleChange = useCallback(
     (state: WorkflowState) => {
       latestStateRef.current = state;
       if (!autoSaveRef.current) return;
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(async () => {
-        setSaving(true);
-        try {
-          await updateProjectWorkflow(project.id, state);
-        } catch {
-          addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
-        } finally {
-          setSaving(false);
-        }
-      }, 600);
+      scheduleSave();
     },
-    [project.id, addToast]
+    [scheduleSave]
   );
 
   const manualSave = useCallback(async () => {
     if (!latestStateRef.current) return;
+    if (saveStateRef.current === "saving") {
+      addToast({ title: "Save in progress", message: "Please wait for the current save to finish.", variant: "info" });
+      return;
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveStateRef.current = "saving";
     setSaving(true);
     try {
       await updateProjectWorkflow(project.id, latestStateRef.current);
@@ -96,12 +120,13 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
       addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
     } finally {
       setSaving(false);
+      saveStateRef.current = "idle";
     }
   }, [project.id, addToast]);
 
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
 

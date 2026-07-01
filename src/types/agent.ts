@@ -7,6 +7,15 @@ export type AgentMessage = {
   role: AgentRole;
   content: string;
   createdAt: string;
+  checkpointId?: string;
+};
+
+export type AgentCheckpointUI = {
+  id: string;
+  chatId: string;
+  messageId: string;
+  label: string;
+  createdAt: string;
 };
 
 export type AgentAppState = {
@@ -17,6 +26,7 @@ export type AgentAppState = {
 };
 
 type AgentNodeType = Exclude<NodeType, "output">;
+type AnnotationType = Exclude<ToolId, "select" | "prompt" | "source" | "generate" | "output">;
 
 export type AgentAction =
   | {
@@ -28,6 +38,36 @@ export type AgentAction =
         properties?: Record<string, string>;
       }[];
       connections?: { from: number; to: number }[];
+    }
+  | {
+      type: "move_nodes";
+      nodes: { id: string; x: number; y: number }[];
+    }
+  | {
+      type: "connect_nodes";
+      connections: { fromId: string; toId: string }[];
+    }
+  | {
+      type: "update_node_properties";
+      id: string;
+      properties: Record<string, string>;
+    }
+  | {
+      type: "set_camera";
+      x: number;
+      y: number;
+      zoom: number;
+    }
+  | {
+      type: "create_annotations";
+      annotations: {
+        type: AnnotationType;
+        x: number;
+        y: number;
+        width?: number;
+        height?: number;
+        text?: string;
+      }[];
     }
   | { type: "run_workflow" }
   | { type: "select_tool"; tool: ToolId }
