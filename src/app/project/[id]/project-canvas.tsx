@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Loader2, Play } from "lucide-react";
 import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
 import { updateProjectWorkflow } from "@/lib/projects/service";
+import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
@@ -17,6 +18,7 @@ import type { WorkflowState } from "@/types/canvas";
 export function ProjectCanvasEditor({ project }: { project: Project }) {
   const [saving, setSaving] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { addToast } = useToast();
 
   const handleChange = useCallback(
     (state: WorkflowState) => {
@@ -25,12 +27,15 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
         setSaving(true);
         try {
           await updateProjectWorkflow(project.id, state);
+          addToast({ title: "Saved", message: "Project workflow saved.", variant: "success", duration: 2000 });
+        } catch {
+          addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
         } finally {
           setSaving(false);
         }
       }, 600);
     },
-    [project.id]
+    [project.id, addToast]
   );
 
   useEffect(() => {
@@ -54,6 +59,7 @@ function ProjectCanvasInner({
   saving: boolean;
 }) {
   const { elements, connections, updateNodeStatus, addElement, addConnection, removeElements, selectedIds } = useCanvas();
+  const { addToast } = useToast();
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
@@ -141,6 +147,7 @@ function ProjectCanvasInner({
 
     const getNode = (id: string) => elements.find((el) => el.id === id);
 
+    let anyError = false;
     try {
       const graph = elements.filter((el) => el.nodeData);
       const done = new Set<string>();
@@ -194,6 +201,7 @@ function ProjectCanvasInner({
               allUrls.push(result.url);
             } else {
               lastError = result.error || "Generation failed";
+              anyError = true;
               break;
             }
           }
@@ -213,6 +221,7 @@ function ProjectCanvasInner({
             updateNodeStatus(id, "done", genUrls[index]);
           } else {
             updateNodeStatus(id, "error", undefined, "No output at this index");
+            anyError = true;
           }
         } else {
           updateNodeStatus(id, "done", node.nodeData.outputUrl);
@@ -230,6 +239,18 @@ function ProjectCanvasInner({
           }
         }
       }
+
+      if (anyError) {
+        addToast({ title: "Workflow finished", message: "Some nodes encountered errors. Check the output nodes for details.", variant: "warning" });
+      } else if (graph.length > 0) {
+        addToast({ title: "Workflow complete", message: "All nodes finished successfully.", variant: "success" });
+      }
+    } catch (err) {
+      addToast({
+        title: "Workflow failed",
+        message: err instanceof Error ? err.message : "An unexpected error occurred.",
+        variant: "error",
+      });
     } finally {
       setRunning(false);
     }
