@@ -118,6 +118,15 @@ export function Canvas() {
       }
 
       const el = newElement(activeTool, world.x, world.y);
+      if (activeTool.startsWith("node_")) {
+        el.width = 120;
+        el.height = 56;
+        el.fill = activeTool === "node_output" ? "#171717" : "#ffffff";
+        el.nodeData = { label: activeTool.replace("node_", "").replace("_", " ") };
+        addElement(el);
+        selectElements([el.id]);
+        return;
+      }
       addElement(el);
       setDrag({ kind: "create", start: world, el });
     },

@@ -2,53 +2,22 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import type { AdType } from "@/types/ads";
-
-const AD_TYPES: { id: AdType; label: string; description: string }[] = [
-  {
-    id: "ai_actor",
-    label: "AI Talking Actor",
-    description: "Script + actor → realistic talking-head UGC video",
-  },
-  {
-    id: "fashion_tryon",
-    label: "Fashion Try-On",
-    description: "Product photo + model scene → model wearing your product",
-  },
-  {
-    id: "product_showcase",
-    label: "Product Showcase",
-    description: "Product photo + prompt → actor holding/using your product",
-  },
-  {
-    id: "hook_repurpose",
-    label: "Hook Repurpose",
-    description: "Reference video + new script → recreate the hook for your product",
-  },
-  {
-    id: "text_to_video",
-    label: "Text-to-Video",
-    description: "Prompt + optional image → cinematic AI video",
-  },
-];
 
 export function CreateProjectDialog({
   folderId,
   onCreate,
 }: {
   folderId?: string;
-  onCreate: (name: string, adType: AdType) => void;
+  onCreate: (name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [adType, setAdType] = useState<AdType>("ai_actor");
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), adType);
+    onCreate(name.trim());
     setName("");
-    setAdType("ai_actor");
     setOpen(false);
   }
 
@@ -66,7 +35,7 @@ export function CreateProjectDialog({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <form
             onSubmit={submit}
-            className="w-[28rem] rounded-xl border border-neutral-200 bg-white p-5 shadow-lg"
+            className="w-[24rem] rounded-xl border border-neutral-200 bg-white p-5 shadow-lg"
           >
             <h3 className="text-sm font-semibold text-neutral-900">
               New project
@@ -78,33 +47,9 @@ export function CreateProjectDialog({
               placeholder="Project name"
               className="mt-3 w-full rounded-md border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-900"
             />
-            <div className="mt-4 grid gap-2">
-              {AD_TYPES.map((t) => (
-                <label
-                  key={t.id}
-                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                    adType === t.id
-                      ? "border-neutral-900 bg-neutral-50"
-                      : "border-neutral-200 hover:bg-neutral-50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="adType"
-                    value={t.id}
-                    checked={adType === t.id}
-                    onChange={() => setAdType(t.id)}
-                    className="mt-0.5"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-neutral-900">
-                      {t.label}
-                    </p>
-                    <p className="text-xs text-neutral-500">{t.description}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
+            <p className="mt-2 text-xs text-neutral-500">
+              Build your own workflow on the canvas.
+            </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"

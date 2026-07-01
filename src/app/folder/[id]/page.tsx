@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { ArrowLeft, Plus } from "lucide-react";
-import { listFolders, listProjects, createProject } from "@/lib/ads/service";
+import { listFolders, listProjects, createProject } from "@/lib/projects/service";
 import { CreateProjectDialog } from "@/components/dashboard/create-project-dialog";
-import type { AdType } from "@/types/ads";
 
 export default async function FolderPage({
   params,
@@ -16,9 +15,9 @@ export default async function FolderPage({
   if (!folder) return <div>Folder not found</div>;
   const projects = await listProjects(id);
 
-  async function handleCreate(name: string, adType: AdType) {
+  async function handleCreate(name: string) {
     "use server";
-    await createProject(id, name, adType);
+    await createProject({ folder_id: id, name });
     revalidatePath(`/folder/${id}`);
   }
 
@@ -55,7 +54,7 @@ export default async function FolderPage({
                 <p className="text-sm font-medium text-neutral-900">
                   {project.name}
                 </p>
-                <p className="text-xs text-neutral-500">{project.ad_type}</p>
+                <p className="text-xs text-neutral-500">Canvas workflow</p>
               </Link>
             ))}
           </div>

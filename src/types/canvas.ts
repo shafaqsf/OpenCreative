@@ -8,9 +8,29 @@ export type ToolId =
   | "line"
   | "arrow"
   | "text"
-  | "draw";
+  | "draw"
+  | "node_prompt"
+  | "node_image"
+  | "node_video"
+  | "node_upload"
+  | "node_output";
 
 export type Point = { x: number; y: number };
+
+export type NodeType =
+  | "node_prompt"
+  | "node_image"
+  | "node_video"
+  | "node_upload"
+  | "node_output";
+
+export type NodeData = {
+  label?: string;
+  prompt?: string;
+  url?: string;
+  model?: string;
+  status?: "idle" | "running" | "done" | "error";
+};
 
 export type CanvasElement = {
   id: string;
@@ -22,6 +42,7 @@ export type CanvasElement = {
   rotation?: number;
   points?: Point[];
   text?: string;
+  nodeData?: NodeData;
   stroke: string;
   fill: string;
   strokeWidth: number;

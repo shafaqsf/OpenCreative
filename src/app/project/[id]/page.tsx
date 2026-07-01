@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { getProject } from "@/lib/ads/service";
-import { ProjectEditor } from "@/components/project-editor/project-editor";
+import { getProject } from "@/lib/projects/service";
+import { ProjectCanvasEditor } from "./project-canvas";
 
 export default async function ProjectPage({
   params,
@@ -10,5 +10,5 @@ export default async function ProjectPage({
   const { id } = await params;
   const project = await getProject(id);
   if (!project) notFound();
-  return <ProjectEditor project={project} />;
+  return <ProjectCanvasEditor project={project} />;
 }

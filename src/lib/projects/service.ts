@@ -1,16 +1,28 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import type {
-  AdType,
-  Asset,
-  AssetType,
-  Folder,
-  GenerationJob,
-  Output,
-  Project,
-  ProjectConfig,
-} from "@/types/ads";
+import type { Camera, CanvasElement } from "@/types/canvas";
+
+export type Folder = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type Project = {
+  id: string;
+  folder_id: string | null;
+  name: string;
+  workflow: { elements: CanvasElement[]; camera: Camera };
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProjectInput = {
+  folder_id?: string | null;
+  name: string;
+};
 
 export async function listFolders(): Promise<Folder[]> {
   const supabase = await createClient();
@@ -42,7 +54,7 @@ export async function listProjects(folderId?: string): Promise<Project[]> {
   if (folderId) query = query.eq("folder_id", folderId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return data ?? [];
+  return (data ?? []).map((p) => ({ ...p, workflow: normalizeWorkflow(p.workflow) }));
 }
 
 export async function getProject(id: string): Promise<Project | null> {
@@ -53,37 +65,33 @@ export async function getProject(id: string): Promise<Project | null> {
     .eq("id", id)
     .single();
   if (error) return null;
-  return data;
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
 }
 
-export async function createProject(
-  folderId: string | null,
-  name: string,
-  adType: AdType
-): Promise<Project> {
+export async function createProject(input: ProjectInput): Promise<Project> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("projects")
-    .insert({ folder_id: folderId, name, ad_type: adType, config: {} })
+    .insert({ folder_id: input.folder_id ?? null, name: input.name })
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data;
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
 }
 
-export async function updateProjectConfig(
+export async function updateProjectWorkflow(
   id: string,
-  config: ProjectConfig
+  workflow: { elements: CanvasElement[]; camera: Camera }
 ): Promise<Project> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("projects")
-    .update({ config, updated_at: new Date().toISOString() })
+    .update({ workflow, updated_at: new Date().toISOString() })
     .eq("id", id)
     .select()
     .single();
   if (error) throw new Error(error.message);
-  return data;
+  return { ...data, workflow: normalizeWorkflow(data.workflow) };
 }
 
 export async function deleteProject(id: string): Promise<void> {
@@ -92,51 +100,14 @@ export async function deleteProject(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-export async function listAssets(projectId: string): Promise<Asset[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("assets")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-export async function createAsset(
-  projectId: string,
-  type: AssetType,
-  name: string,
-  url: string
-): Promise<Asset> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("assets")
-    .insert({ project_id: projectId, type, name, url })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export async function listJobs(projectId: string): Promise<GenerationJob[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("generation_jobs")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-export async function listOutputs(jobId: string): Promise<Output[]> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("outputs")
-    .select("*")
-    .eq("job_id", jobId)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return data ?? [];
+function normalizeWorkflow(raw: unknown): { elements: CanvasElement[]; camera: Camera } {
+  const empty = { elements: [] as CanvasElement[], camera: { x: 0, y: 0, zoom: 1 } };
+  if (typeof raw !== "object" || raw === null) return empty;
+  const w = raw as Record<string, unknown>;
+  const elements = Array.isArray(w.elements) ? (w.elements as CanvasElement[]) : empty.elements;
+  const camera =
+    typeof w.camera === "object" && w.camera !== null
+      ? ({ ...empty.camera, ...(w.camera as Record<string, unknown>) } as Camera)
+      : empty.camera;
+  return { elements, camera };
 }

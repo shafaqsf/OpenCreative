@@ -1,7 +1,15 @@
 "use client";
 
-import type { CanvasElement } from "@/types/canvas";
+import type { CanvasElement, NodeType } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
+
+const NODE_LABELS: Record<NodeType, string> = {
+  node_prompt: "Prompt",
+  node_image: "Image",
+  node_video: "Video",
+  node_upload: "Upload",
+  node_output: "Output",
+};
 
 export function Shape({ element }: { element: CanvasElement }) {
   const { minX, minY, w, h } = getBounds(element);
@@ -96,9 +104,61 @@ export function Shape({ element }: { element: CanvasElement }) {
         </text>
       );
       break;
+    default:
+      if (element.type.startsWith("node_")) {
+        shape = <WorkflowNode element={element} />;
+      }
+      break;
   }
 
   return <g>{shape}</g>;
+}
+
+function WorkflowNode({ element }: { element: CanvasElement }) {
+  const { minX, minY, w, h } = getBounds(element);
+  const type = element.type as NodeType;
+  const label = element.nodeData?.label || NODE_LABELS[type] || "Node";
+  const fill = type === "node_output" ? "#171717" : "#ffffff";
+  const textFill = type === "node_output" ? "#ffffff" : "#171717";
+  return (
+    <g>
+      <rect
+        x={minX}
+        y={minY}
+        width={w}
+        height={h}
+        rx={6}
+        fill={fill}
+        stroke={element.stroke}
+        strokeWidth={element.strokeWidth}
+      />
+      <circle
+        cx={minX}
+        cy={minY + h / 2}
+        r={4}
+        fill="#171717"
+        stroke="none"
+      />
+      <circle
+        cx={minX + w}
+        cy={minY + h / 2}
+        r={4}
+        fill="#171717"
+        stroke="none"
+      />
+      <text
+        x={minX + w / 2}
+        y={minY + h / 2}
+        fill={textFill}
+        fontSize={12}
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        textAnchor="middle"
+        dominantBaseline="middle"
+      >
+        {label}
+      </text>
+    </g>
+  );
 }
 
 function starPoints(cx: number, cy: number, rx: number, ry: number) {

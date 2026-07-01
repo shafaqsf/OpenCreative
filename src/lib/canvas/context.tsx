@@ -6,10 +6,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-import type { Camera, CanvasElement, Point, ToolId } from "@/types/canvas";
+import type { Camera, CanvasElement, ToolId } from "@/types/canvas";
 import {
   DEFAULT_FILL,
   DEFAULT_STROKE,
@@ -60,16 +61,23 @@ function loadFromStorage(): { elements: CanvasElement[]; camera: Camera } {
   }
 }
 
-export function CanvasProvider({ children }: { children: ReactNode }) {
-  const [elements, setElements] = useState<CanvasElement[]>(() =>
-    loadFromStorage().elements
-  );
+export function CanvasProvider({
+  children,
+  initial,
+  onChange,
+}: {
+  children: ReactNode;
+  initial?: { elements: CanvasElement[]; camera: Camera };
+  onChange?: (state: { elements: CanvasElement[]; camera: Camera }) => void;
+}) {
+  const initialState = initial ?? loadFromStorage();
+  const [elements, setElements] = useState<CanvasElement[]>(initialState.elements);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolId>("select");
-  const [camera, setCameraState] = useState<Camera>(() =>
-    loadFromStorage().camera
-  );
+  const [camera, setCameraState] = useState<Camera>(initialState.camera);
   const [mounted, setMounted] = useState(false);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     setMounted(true);
@@ -77,10 +85,12 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!mounted) return;
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ elements, camera })
-    );
+    const state = { elements, camera };
+    if (onChangeRef.current) {
+      onChangeRef.current(state);
+    } else {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
   }, [elements, camera, mounted]);
 
   const addElement = useCallback((el: CanvasElement) => {

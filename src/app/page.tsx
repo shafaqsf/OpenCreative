@@ -1,21 +1,9 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { Folder, FolderOpen, MoreHorizontal, Plus } from "lucide-react";
-import { listFolders, listProjects, createFolder, createProject } from "@/lib/ads/service";
+import { listFolders, listProjects, createFolder, createProject } from "@/lib/projects/service";
 import { CreateFolderDialog } from "@/components/dashboard/create-folder-dialog";
 import { CreateProjectDialog } from "@/components/dashboard/create-project-dialog";
-import type { AdType } from "@/types/ads";
-
-function adTypeLabel(type: AdType) {
-  const labels: Record<AdType, string> = {
-    ai_actor: "AI Talking Actor",
-    fashion_tryon: "Fashion Try-On",
-    product_showcase: "Product Showcase",
-    hook_repurpose: "Hook Repurpose",
-    text_to_video: "Text-to-Video",
-  };
-  return labels[type];
-}
 
 export default async function DashboardPage() {
   const folders = await listFolders();
@@ -27,9 +15,9 @@ export default async function DashboardPage() {
     revalidatePath("/");
   }
 
-  async function handleCreateProject(name: string, adType: AdType) {
+  async function handleCreateProject(name: string) {
     "use server";
-    await createProject(null, name, adType);
+    await createProject({ name });
     revalidatePath("/");
   }
 
@@ -93,7 +81,7 @@ export default async function DashboardPage() {
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 py-16">
               <Folder className="size-8 text-neutral-300" />
               <p className="mt-3 text-sm text-neutral-500">
-                No projects yet. Create one to start generating ads.
+                No projects yet. Create one to start building on the canvas.
               </p>
             </div>
           ) : (
@@ -113,9 +101,7 @@ export default async function DashboardPage() {
                   <p className="text-sm font-medium text-neutral-900">
                     {project.name}
                   </p>
-                  <p className="text-xs text-neutral-500">
-                    {adTypeLabel(project.ad_type)}
-                  </p>
+                  <p className="text-xs text-neutral-500">Canvas workflow</p>
                 </Link>
               ))}
             </div>
