@@ -35,6 +35,7 @@ import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
 import { AlignToolbar } from "@/components/canvas/align-toolbar";
+import { MiniMap } from "@/components/canvas/mini-map";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
@@ -555,6 +556,7 @@ function ProjectCanvasInner({
           <AlignToolbar />
           <Canvas />
           <ZoomControls />
+          <MiniMap />
         </main>
 
         <aside className="w-64 overflow-y-auto border-l border-neutral-200 bg-white">
