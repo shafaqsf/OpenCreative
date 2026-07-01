@@ -354,7 +354,7 @@ function WorkflowNode({
             </div>
           )}
 
-          {status === "done" && !displayUrl && nodeType === "generate" && (
+          {status === "done" && nodeType === "generate" && (
             <div
               style={{
                 flex: 1,

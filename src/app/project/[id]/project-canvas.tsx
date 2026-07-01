@@ -32,6 +32,9 @@ import {
   Maximize,
   Grid3X3,
   Magnet,
+  Save,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { CanvasProvider, useCanvas, newNode, uid } from "@/lib/canvas/context";
 import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/service";
@@ -53,11 +56,17 @@ import type { WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
   const [saving, setSaving] = useState(false);
+  const [autoSave, setAutoSave] = useState(true);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveRef = useRef(autoSave);
+  autoSaveRef.current = autoSave;
+  const latestStateRef = useRef<WorkflowState | null>(null);
   const { addToast } = useToast();
 
   const handleChange = useCallback(
     (state: WorkflowState) => {
+      latestStateRef.current = state;
+      if (!autoSaveRef.current) return;
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(async () => {
         setSaving(true);
@@ -73,6 +82,19 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
     [project.id, addToast]
   );
 
+  const manualSave = useCallback(async () => {
+    if (!latestStateRef.current) return;
+    setSaving(true);
+    try {
+      await updateProjectWorkflow(project.id, latestStateRef.current);
+      addToast({ title: "Saved", message: "Project saved successfully.", variant: "success" });
+    } catch {
+      addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }, [project.id, addToast]);
+
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -81,7 +103,13 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
 
   return (
     <CanvasProvider initial={project.workflow} onChange={handleChange}>
-      <ProjectCanvasInner project={project} saving={saving} />
+      <ProjectCanvasInner
+        project={project}
+        saving={saving}
+        autoSave={autoSave}
+        onToggleAutoSave={setAutoSave}
+        onManualSave={manualSave}
+      />
     </CanvasProvider>
   );
 }
@@ -89,9 +117,15 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
 function ProjectCanvasInner({
   project,
   saving,
+  autoSave,
+  onToggleAutoSave,
+  onManualSave,
 }: {
   project: Project;
   saving: boolean;
+  autoSave: boolean;
+  onToggleAutoSave: (value: boolean) => void;
+  onManualSave: () => void;
 }) {
   const {
     elements,
@@ -333,7 +367,7 @@ function ProjectCanvasInner({
     } finally {
       setRunning(false);
     }
-  }, [elements, connections, running, project.id, updateNodeStatus, addToast]);
+  }, [elements, connections, running, project.id, updateNodeStatus, addElements, addToast]);
 
   const commands = useMemo(
     () => [
@@ -589,12 +623,51 @@ function ProjectCanvasInner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {saving && (
+          <button
+            onClick={() => {
+              const next = !autoSave;
+              onToggleAutoSave(next);
+              if (!next) {
+                addToast({
+                  title: "Auto-save disabled",
+                  message: "Remember to save your work manually.",
+                  variant: "info",
+                });
+              }
+            }}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-neutral-100"
+            title={
+              autoSave
+                ? "Auto-save is on. Click to disable."
+                : "Auto-save is off. Click to enable."
+            }
+          >
+            {autoSave ? (
+              <Bell className="size-3" />
+            ) : (
+              <BellOff className="size-3" />
+            )}
+            <span>{autoSave ? "Auto" : "Manual"}</span>
+          </button>
+
+          {!autoSave && (
+            <button
+              onClick={onManualSave}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50"
+            >
+              <Save className="size-3" />
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
+
+          {saving && autoSave && (
             <span className="flex items-center gap-1.5 text-xs text-neutral-400">
               <Loader2 className="size-3 animate-spin" />
               Saving…
             </span>
           )}
+
           <OutputGalleryButton projectId={project.id} />
         </div>
       </header>
