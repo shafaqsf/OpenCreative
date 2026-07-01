@@ -54,6 +54,11 @@ export function ToolsPanel() {
           {tools.map(({ id, label, Icon, shortcut }) => (
             <button
               key={id}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/opencreative-tool", id);
+                e.dataTransfer.effectAllowed = "copy";
+              }}
               onClick={() => setActiveTool(id)}
               title={`${label} — ${shortcut}`}
               className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-xs transition-colors ${
@@ -72,6 +77,11 @@ export function ToolsPanel() {
           {nodes.map(({ id, label, Icon, desc }) => (
             <button
               key={id}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/opencreative-tool", id);
+                e.dataTransfer.effectAllowed = "copy";
+              }}
               onClick={() => setActiveTool(id)}
               className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
                 activeTool === id

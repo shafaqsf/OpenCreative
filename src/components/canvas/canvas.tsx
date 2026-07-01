@@ -15,7 +15,7 @@ import { useToast } from "@/lib/toast/context";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { Shape } from "./shape";
 import { SelectionOverlay } from "./selection-overlay";
-import type { CanvasElement, NodeType, Point } from "@/types/canvas";
+import type { CanvasElement, NodeType, Point, ToolId } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 
 type DragMode =
@@ -63,6 +63,7 @@ export function Canvas() {
     copyToClipboard,
     duplicateSelection,
     selectAll,
+    setActiveTool,
   } = useCanvas();
   const { addToast } = useToast();
 
@@ -298,6 +299,47 @@ export function Canvas() {
     [setCamera]
   );
 
+  const onDragOver = useCallback((e: React.DragEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      const toolId = e.dataTransfer.getData("application/opencreative-tool");
+      if (!toolId) return;
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const screenPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const world = screenToWorld(screenPos, camera);
+
+      if (isNodeTool(toolId as NodeType)) {
+        const el = newNode(toolId as NodeType, world.x - 90, world.y - 40);
+        addElement(el);
+        selectElements([el.id]);
+      } else if (toolId === "text") {
+        const el = newElement("text", world.x, world.y);
+        el.height = 20;
+        el.width = 80;
+        el.text = "";
+        addElement(el);
+        selectElements([el.id]);
+        setEditingTextId(el.id);
+      } else if (toolId === "draw") {
+        const el = newElement("draw", world.x, world.y);
+        el.points = [world];
+        addElement(el);
+      } else {
+        const el = newElement(toolId as Exclude<ToolId, "select">, world.x, world.y);
+        addElement(el);
+        selectElements([el.id]);
+      }
+      setActiveTool("select");
+    },
+    [camera, addElement, selectElements, setActiveTool]
+  );
+
   const cursor =
     drag.kind === "pan"
       ? "grabbing"
@@ -445,6 +487,8 @@ export function Canvas() {
         onPointerLeave={onPointerUp}
         onWheel={onWheel}
         onContextMenu={onContextMenu}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
       >
         <g
           style={{
