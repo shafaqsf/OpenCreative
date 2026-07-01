@@ -4,6 +4,7 @@ import { Folder, FolderOpen, MoreHorizontal, Plus } from "lucide-react";
 import { listFolders, listProjects, createFolder, createProject } from "@/lib/projects/service";
 import { CreateFolderDialog } from "@/components/dashboard/create-folder-dialog";
 import { CreateProjectDialog } from "@/components/dashboard/create-project-dialog";
+import { DashboardCommands } from "@/components/dashboard/dashboard-commands";
 
 export default async function DashboardPage() {
   const folders = await listFolders();
@@ -22,8 +23,10 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-white text-neutral-900">
-      <header className="flex items-center justify-between border-b border-neutral-200 px-6 py-3.5">
+    <>
+      <DashboardCommands folders={folders} projects={allProjects} />
+      <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-white text-neutral-900">
+        <header className="flex items-center justify-between border-b border-neutral-200 px-6 py-3.5">
         <div className="flex items-center gap-2.5">
           <div className="flex size-7 items-center justify-center rounded-md bg-neutral-900 text-white">
             <span className="text-xs font-bold">OC</span>
@@ -108,6 +111,7 @@ export default async function DashboardPage() {
           )}
         </section>
       </main>
-    </div>
+      </div>
+    </>
   );
 }

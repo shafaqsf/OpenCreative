@@ -2,7 +2,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Play } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Play,
+  MousePointer2,
+  Square,
+  Circle,
+  Minus,
+  ArrowRight,
+  Type,
+  PenLine,
+  Triangle,
+  Diamond,
+  Star,
+  FileText,
+  Image,
+  Sparkles,
+  Monitor,
+  RotateCcw,
+  Redo,
+  Trash2,
+  Copy,
+  ZoomIn,
+  Maximize,
+} from "lucide-react";
 import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
 import { updateProjectWorkflow } from "@/lib/projects/service";
 import { useToast } from "@/lib/toast/context";
@@ -13,6 +37,7 @@ import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
+import { useRegisterCommands } from "@/lib/command-palette/context";
 import type { Project } from "@/lib/projects/service";
 import type { WorkflowState } from "@/types/canvas";
 
@@ -59,11 +84,190 @@ function ProjectCanvasInner({
   project: Project;
   saving: boolean;
 }) {
-  const { elements, connections, updateNodeStatus, addElement, addConnection, removeElements, selectedIds } = useCanvas();
+  const {
+    elements,
+    connections,
+    updateNodeStatus,
+    addElement,
+    addConnection,
+    removeElements,
+    selectedIds,
+    setActiveTool,
+    setCamera,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    duplicateSelection,
+  } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
 
   useKeyboardShortcuts();
+
+  useRegisterCommands([
+    {
+      id: "tool-select",
+      title: "Select tool",
+      section: "Tools",
+      shortcut: "V",
+      icon: <MousePointer2 className="size-3.5" />,
+      onSelect: () => setActiveTool("select"),
+    },
+    {
+      id: "tool-rectangle",
+      title: "Rectangle tool",
+      section: "Tools",
+      shortcut: "R",
+      icon: <Square className="size-3.5" />,
+      onSelect: () => setActiveTool("rectangle"),
+    },
+    {
+      id: "tool-ellipse",
+      title: "Ellipse tool",
+      section: "Tools",
+      shortcut: "O",
+      icon: <Circle className="size-3.5" />,
+      onSelect: () => setActiveTool("ellipse"),
+    },
+    {
+      id: "tool-triangle",
+      title: "Triangle tool",
+      section: "Tools",
+      shortcut: "G",
+      icon: <Triangle className="size-3.5" />,
+      onSelect: () => setActiveTool("triangle"),
+    },
+    {
+      id: "tool-diamond",
+      title: "Diamond tool",
+      section: "Tools",
+      shortcut: "H",
+      icon: <Diamond className="size-3.5" />,
+      onSelect: () => setActiveTool("diamond"),
+    },
+    {
+      id: "tool-star",
+      title: "Star tool",
+      section: "Tools",
+      shortcut: "S",
+      icon: <Star className="size-3.5" />,
+      onSelect: () => setActiveTool("star"),
+    },
+    {
+      id: "tool-line",
+      title: "Line tool",
+      section: "Tools",
+      shortcut: "L",
+      icon: <Minus className="size-3.5" />,
+      onSelect: () => setActiveTool("line"),
+    },
+    {
+      id: "tool-arrow",
+      title: "Arrow tool",
+      section: "Tools",
+      shortcut: "A",
+      icon: <ArrowRight className="size-3.5" />,
+      onSelect: () => setActiveTool("arrow"),
+    },
+    {
+      id: "tool-text",
+      title: "Text tool",
+      section: "Tools",
+      shortcut: "T",
+      icon: <Type className="size-3.5" />,
+      onSelect: () => setActiveTool("text"),
+    },
+    {
+      id: "tool-draw",
+      title: "Draw tool",
+      section: "Tools",
+      shortcut: "D",
+      icon: <PenLine className="size-3.5" />,
+      onSelect: () => setActiveTool("draw"),
+    },
+    {
+      id: "node-prompt",
+      title: "Prompt node",
+      section: "Nodes",
+      icon: <FileText className="size-3.5" />,
+      onSelect: () => setActiveTool("prompt"),
+    },
+    {
+      id: "node-source",
+      title: "Source node",
+      section: "Nodes",
+      icon: <Image className="size-3.5" />,
+      onSelect: () => setActiveTool("source"),
+    },
+    {
+      id: "node-generate",
+      title: "Generate node",
+      section: "Nodes",
+      icon: <Sparkles className="size-3.5" />,
+      onSelect: () => setActiveTool("generate"),
+    },
+    {
+      id: "node-output",
+      title: "Output node",
+      section: "Nodes",
+      icon: <Monitor className="size-3.5" />,
+      onSelect: () => setActiveTool("output"),
+    },
+    {
+      id: "workflow-run",
+      title: "Run workflow",
+      section: "Workflow",
+      icon: <Play className="size-3.5" />,
+      onSelect: handleRun,
+    },
+    {
+      id: "edit-undo",
+      title: "Undo",
+      section: "Edit",
+      shortcut: "Ctrl+Z",
+      icon: <RotateCcw className="size-3.5" />,
+      onSelect: () => canUndo && undo(),
+    },
+    {
+      id: "edit-redo",
+      title: "Redo",
+      section: "Edit",
+      shortcut: "Ctrl+Shift+Z",
+      icon: <Redo className="size-3.5" />,
+      onSelect: () => canRedo && redo(),
+    },
+    {
+      id: "edit-duplicate",
+      title: "Duplicate selection",
+      section: "Edit",
+      shortcut: "Ctrl+D",
+      icon: <Copy className="size-3.5" />,
+      onSelect: duplicateSelection,
+    },
+    {
+      id: "edit-delete",
+      title: "Delete selection",
+      section: "Edit",
+      shortcut: "Del",
+      icon: <Trash2 className="size-3.5" />,
+      onSelect: () => selectedIds.length > 0 && removeElements(selectedIds),
+    },
+    {
+      id: "view-reset-zoom",
+      title: "Reset zoom",
+      section: "View",
+      icon: <ZoomIn className="size-3.5" />,
+      onSelect: () => setCamera({ x: 0, y: 0, zoom: 1 }),
+    },
+    {
+      id: "view-fit",
+      title: "Fit to view",
+      section: "View",
+      icon: <Maximize className="size-3.5" />,
+      onSelect: () => setCamera({ x: 0, y: 0, zoom: 1 }),
+    },
+  ]);
 
   useEffect(() => {
     const nowConnections = connections;
