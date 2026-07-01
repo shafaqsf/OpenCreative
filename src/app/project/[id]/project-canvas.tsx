@@ -33,7 +33,7 @@ import {
   Grid3X3,
   Magnet,
 } from "lucide-react";
-import { CanvasProvider, useCanvas } from "@/lib/canvas/context";
+import { CanvasProvider, useCanvas, newNode, uid } from "@/lib/canvas/context";
 import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
@@ -97,6 +97,7 @@ function ProjectCanvasInner({
     elements,
     connections,
     updateNodeStatus,
+    addElements,
     removeElements,
     selectedIds,
     setActiveTool,
@@ -125,19 +126,35 @@ function ProjectCanvasInner({
 
     const nowElements = [...elements];
     const nowConnections = [...connections];
+    const newElements: typeof nowElements = [];
+    const newConnections: typeof nowConnections = [];
     const runOutputIds = new Map<string, string[]>();
 
     for (const gen of nowElements) {
       if (gen.type !== "generate" || !gen.nodeData) continue;
       const model = getGenerationModel(gen.nodeData.properties.model);
-      const configuredOutputs = nowConnections
+      const count = normalizeOutputCount(gen.nodeData.properties.count, model.id);
+      const existingOutputIds = nowConnections
         .filter((conn) => {
           if (conn.fromId !== gen.id) return false;
           return nowElements.some((el) => el.id === conn.toId && el.type === "output");
         })
         .map((conn) => conn.toId);
 
-      configuredOutputs.forEach((outputId, index) => {
+      const allOutputIds = [...existingOutputIds];
+      for (let i = existingOutputIds.length; i < count; i++) {
+        const out = newNode("output", gen.x + gen.width + 60, gen.y + i * 120);
+        out.nodeData!.properties.outputIndex = String(i);
+        out.nodeData!.properties.outputType = model.outputType;
+        const conn = { id: uid(), fromId: gen.id, toId: out.id };
+        nowElements.push(out);
+        nowConnections.push(conn);
+        newElements.push(out);
+        newConnections.push(conn);
+        allOutputIds.push(out.id);
+      }
+
+      existingOutputIds.forEach((outputId, index) => {
         const output = nowElements.find((el) => el.id === outputId && el.nodeData);
         if (!output?.nodeData) return;
         output.nodeData = {
@@ -149,8 +166,9 @@ function ProjectCanvasInner({
           },
         };
       });
-      runOutputIds.set(gen.id, configuredOutputs);
+      runOutputIds.set(gen.id, allOutputIds);
     }
+    if (newElements.length > 0) addElements(newElements, newConnections);
 
     const getInputs = (nodeId: string) =>
       nowConnections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
@@ -214,7 +232,7 @@ function ProjectCanvasInner({
           let lastError: string | undefined;
 
           for (let i = 0; i < count; i++) {
-            const outputId = currentOutputIds[i] ?? currentOutputIds[currentOutputIds.length - 1];
+            const outputId = currentOutputIds[i];
             const outputNode = outputId ? getNode(outputId) : null;
             const result = await runGeneration({
               prompt,
