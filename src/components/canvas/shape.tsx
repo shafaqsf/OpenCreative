@@ -6,6 +6,7 @@ import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 import { useCanvas } from "@/lib/canvas/context";
+import { getGenerationModel } from "@/lib/canvas/generation-models";
 
 const NODE_COLORS: Record<NodeType, string> = {
   prompt: "#fafafa",
@@ -161,9 +162,18 @@ function WorkflowNode({
   const strokeW = status === "running" ? 2 : 1.5;
   const { runWorkflow, selectedIds } = useCanvas();
 
+  const sourceUrl = nodeType === "source" ? nodeData.properties.url?.trim() : undefined;
   const displayUrl = outputUrl || (outputUrls && outputUrls.length > 0 ? outputUrls[0] : undefined);
-  const showMedia = nodeType === "output" && (status === "done" || status === "idle") && displayUrl;
+  const mediaUrl = sourceUrl || displayUrl;
+  const outputType = nodeData.properties.outputType || nodeData.properties.fileType;
+  const showMedia =
+    Boolean(mediaUrl) &&
+    (nodeType === "source" || (nodeType === "output" && (status === "done" || status === "idle")));
+  const showVideo =
+    outputType === "video" || /\.(mp4|webm|mov)(?:$|\?)/i.test(mediaUrl ?? "");
   const isSelected = selectedIds.includes(element.id);
+  const promptContent = nodeType === "prompt" ? nodeData.properties.content?.trim() : "";
+  const generationModel = nodeType === "generate" ? getGenerationModel(nodeData.properties.model) : null;
 
   return (
     <g>
@@ -172,7 +182,7 @@ function WorkflowNode({
         y={minY}
         width={w}
         height={h}
-        rx={10}
+        rx={8}
         fill={NODE_COLORS[nodeType]}
         stroke={strokeColor}
         strokeWidth={strokeW}
@@ -184,7 +194,7 @@ function WorkflowNode({
           y={minY}
           width={w}
           height={h}
-          rx={10}
+          rx={8}
           fill="none"
           stroke="#2563eb"
           strokeWidth={1.5}
@@ -213,7 +223,7 @@ function WorkflowNode({
               fontSize: 11,
               fontWeight: 600,
               color: "#525252",
-              letterSpacing: "0.02em",
+              letterSpacing: 0,
             }}
           >
             {element.customLabel || label}
@@ -285,20 +295,35 @@ function WorkflowNode({
                 gap: 4,
               }}
             >
-              <img
-                src={displayUrl!}
-                alt=""
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: isSelected ? "60%" : "100%",
-                  objectFit: "contain",
-                  borderRadius: 4,
-                  flex: 1,
-                }}
-              />
-              {isSelected && (
+              {showVideo ? (
+                <video
+                  src={mediaUrl}
+                  muted
+                  controls={isSelected}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: isSelected && nodeType === "output" ? "60%" : "100%",
+                    objectFit: "contain",
+                    borderRadius: 4,
+                    flex: 1,
+                  }}
+                />
+              ) : (
+                <img
+                  src={mediaUrl}
+                  alt=""
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: isSelected && nodeType === "output" ? "60%" : "100%",
+                    objectFit: "contain",
+                    borderRadius: 4,
+                    flex: 1,
+                  }}
+                />
+              )}
+              {isSelected && nodeType === "output" && displayUrl && (
                 <OutputNodeControls
-                  url={displayUrl!}
+                  url={displayUrl}
                   outputUrls={outputUrls}
                   nodeData={nodeData}
                   elementId={element.id}
@@ -321,35 +346,55 @@ function WorkflowNode({
               }}
             >
               {nodeType === "generate" ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    runWorkflow?.();
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "5px 14px",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: "#fff",
-                    background: "#171717",
-                    border: "none",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    lineHeight: 1,
-                  }}
-                >
-                  Run
-                </button>
+                <>
+                  <span style={{ fontSize: 10, color: "#525252", fontWeight: 500, textAlign: "center" }}>
+                    {generationModel?.label}
+                  </span>
+                  <span style={{ fontSize: 10, color: "#a3a3a3", textTransform: "capitalize" }}>
+                    {generationModel?.outputType} x{nodeData.properties.count || "1"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      runWorkflow?.();
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "5px 14px",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "#fff",
+                      background: "#171717",
+                      border: "none",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      lineHeight: 1,
+                    }}
+                  >
+                    Run
+                  </button>
+                </>
               ) : nodeType === "output" ? (
                 <span style={{ fontSize: 10, color: "#a3a3a3" }}>Awaiting result</span>
               ) : nodeType === "prompt" ? (
-                <span style={{ fontSize: 10, color: "#a3a3a3" }}>Text input</span>
+                <span
+                  style={{
+                    maxWidth: "100%",
+                    color: promptContent ? "#525252" : "#a3a3a3",
+                    fontSize: 10,
+                    lineHeight: 1.35,
+                    overflow: "hidden",
+                    textAlign: "center",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {promptContent || "Empty prompt"}
+                </span>
               ) : (
-                <span style={{ fontSize: 10, color: "#a3a3a3" }}>Media input</span>
+                <span style={{ fontSize: 10, color: "#a3a3a3" }}>No source selected</span>
               )}
             </div>
           )}
@@ -466,7 +511,8 @@ function OutputNodeControls({
   const { updateNodeProperties } = useCanvas();
   const fmtKey = `fmt_${index}`;
   const nameKey = `name_${index}`;
-  const format = nodeData.properties[fmtKey] || "png";
+  const isVideo = nodeData.properties.outputType === "video";
+  const format = nodeData.properties[fmtKey] || (isVideo ? "mp4" : "png");
   const [renaming, setRenaming] = useState(false);
   const [nameInput, setNameInput] = useState(nodeData.properties[nameKey] || "");
   const fileName = `${nodeData.properties[nameKey] || `output-${index + 1}`}.${format}`;
@@ -487,9 +533,19 @@ function OutputNodeControls({
           width: 56,
         }}
       >
-        <option value="png">PNG</option>
-        <option value="jpg">JPG</option>
-        <option value="webp">WebP</option>
+        {isVideo ? (
+          <>
+            <option value="mp4">MP4</option>
+            <option value="webm">WebM</option>
+            <option value="mov">MOV</option>
+          </>
+        ) : (
+          <>
+            <option value="png">PNG</option>
+            <option value="jpg">JPG</option>
+            <option value="webp">WebP</option>
+          </>
+        )}
       </select>
       <div style={{ flex: 1, minWidth: 0 }}>
         {renaming ? (

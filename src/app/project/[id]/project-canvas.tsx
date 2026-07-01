@@ -36,7 +36,7 @@ import {
   Bell,
   BellOff,
 } from "lucide-react";
-import { CanvasProvider, useCanvas, newNode, uid } from "@/lib/canvas/context";
+import { CanvasProvider, useCanvas } from "@/lib/canvas/context";
 import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
@@ -49,10 +49,16 @@ import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
 import { getGenerationModel, normalizeOutputCount } from "@/lib/canvas/generation-models";
+import {
+  collectGenerateInput,
+  getConnectedOutputIds,
+  getNode,
+  prepareWorkflowRun,
+} from "@/lib/canvas/workflow-engine";
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import { useRegisterCommands } from "@/lib/command-palette/context";
 import type { Project } from "@/lib/projects/service";
-import type { WorkflowState } from "@/types/canvas";
+import type { NodeStatus, WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
   const [saving, setSaving] = useState(false);
@@ -130,8 +136,8 @@ function ProjectCanvasInner({
   const {
     elements,
     connections,
-    updateNodeStatus,
-    addElements,
+    replaceWorkflowGraph,
+    commitWorkflowGraph,
     removeElements,
     selectedIds,
     setActiveTool,
@@ -158,204 +164,176 @@ function ProjectCanvasInner({
     if (running) return;
     setRunning(true);
 
-    const nowElements = [...elements];
-    const nowConnections = [...connections];
-    const newElements: typeof nowElements = [];
-    const newConnections: typeof nowConnections = [];
-    const runOutputIds = new Map<string, string[]>();
+    let anyError = false;
+    let anySaveError = false;
 
-    for (const gen of nowElements) {
-      if (gen.type !== "generate" || !gen.nodeData) continue;
-      const model = getGenerationModel(gen.nodeData.properties.model);
-      const count = normalizeOutputCount(gen.nodeData.properties.count, model.id);
-      const existingOutputIds = nowConnections
-        .filter((conn) => {
-          if (conn.fromId !== gen.id) return false;
-          return nowElements.some((el) => el.id === conn.toId && el.type === "output");
-        })
-        .map((conn) => conn.toId);
-
-      const allOutputIds = [...existingOutputIds];
-      for (let i = existingOutputIds.length; i < count; i++) {
-        const out = newNode("output", gen.x + gen.width + 60, gen.y + i * 120);
-        out.nodeData!.properties.outputIndex = String(i);
-        out.nodeData!.properties.outputType = model.outputType;
-        const conn = { id: uid(), fromId: gen.id, toId: out.id };
-        nowElements.push(out);
-        nowConnections.push(conn);
-        newElements.push(out);
-        newConnections.push(conn);
-        allOutputIds.push(out.id);
+    try {
+      const prepared = prepareWorkflowRun(elements, connections);
+      if (prepared.issues.length > 0) {
+        addToast({
+          title: "Workflow cannot run",
+          message: prepared.issues[0],
+          variant: "error",
+        });
+        return;
       }
 
-      existingOutputIds.forEach((outputId, index) => {
-        const output = nowElements.find((el) => el.id === outputId && el.nodeData);
-        if (!output?.nodeData) return;
-        output.nodeData = {
-          ...output.nodeData,
-          properties: {
-            ...output.nodeData.properties,
-            outputIndex: String(index),
-            outputType: model.outputType,
-          },
-        };
-      });
-      runOutputIds.set(gen.id, allOutputIds);
-    }
-    if (newElements.length > 0) addElements(newElements, newConnections);
+      let workingElements = prepared.elements;
+      const workingConnections = prepared.connections;
 
-    const getInputs = (nodeId: string) =>
-      nowConnections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
-
-    const getOutputs = (nodeId: string) =>
-      nowConnections.filter((c) => c.fromId === nodeId).map((c) => c.toId);
-
-    const getNode = (id: string) => nowElements.find((el) => el.id === id);
-
-    let anyError = false;
-    try {
-      const graph = nowElements.filter((el) => el.nodeData);
-      const done = new Set<string>();
-      const queue: string[] = [];
-
-      const enqueueIfReady = (nodeId: string) => {
-        const inputs = getInputs(nodeId);
-        if (inputs.every((i) => done.has(i)) && !done.has(nodeId)) {
-          queue.push(nodeId);
+      const setNodeState = (
+        id: string,
+        patch: {
+          status?: NodeStatus;
+          outputUrl?: string;
+          outputUrls?: string[];
+          error?: string;
         }
+      ) => {
+        workingElements = workingElements.map((element) => {
+          if (element.id !== id || !element.nodeData) return element;
+          return {
+            ...element,
+            nodeData: {
+              ...element.nodeData,
+              ...patch,
+              properties: { ...element.nodeData.properties },
+            },
+          };
+        });
       };
 
-      for (const n of graph) {
-        const inputs = getInputs(n.id);
-        if (inputs.length === 0) {
-          done.add(n.id);
-          const nd = n.nodeData!;
-          if (!nd.outputUrl) {
-            updateNodeStatus(n.id, "done", nd.properties.url || nd.properties.content);
-          }
+      const flushRunState = () => {
+        replaceWorkflowGraph(workingElements, workingConnections);
+      };
+
+      if (prepared.addedElements.length > 0 || prepared.addedConnections.length > 0) {
+        commitWorkflowGraph(workingElements, workingConnections);
+      } else {
+        flushRunState();
+      }
+
+      if (prepared.generateIds.length === 0) {
+        addToast({
+          title: "No generate nodes",
+          message: "Add a generate node and connect a prompt or source to run a workflow.",
+          variant: "info",
+        });
+        return;
+      }
+
+      for (const generateId of prepared.generateIds) {
+        const generateNode = getNode(workingElements, generateId);
+        if (!generateNode) continue;
+
+        const selectedModel = getGenerationModel(generateNode.nodeData.properties.model);
+        const count = normalizeOutputCount(generateNode.nodeData.properties.count, selectedModel.id);
+        const outputIds = getConnectedOutputIds(workingElements, workingConnections, generateId).slice(0, count);
+        const input = collectGenerateInput(workingElements, workingConnections, generateId);
+
+        if (!input.prompt && !input.mediaUrl) {
+          const message = "Connect at least one prompt or source before running this generate node.";
+          setNodeState(generateId, { status: "error", error: message });
+          outputIds.forEach((outputId) => setNodeState(outputId, { status: "error", error: message }));
+          flushRunState();
+          anyError = true;
+          continue;
         }
-      }
 
-      for (const n of graph) {
-        if (!done.has(n.id)) enqueueIfReady(n.id);
-      }
+        setNodeState(generateId, { status: "running", error: undefined });
+        outputIds.forEach((outputId) => setNodeState(outputId, { status: "running", error: undefined }));
+        flushRunState();
 
-      while (queue.length > 0) {
-        const id = queue.shift()!;
-        if (done.has(id)) continue;
-        const node = getNode(id);
-        if (!node?.nodeData) continue;
-
-        if (node.type === "generate") {
-          updateNodeStatus(id, "running");
-          const inputIds = getInputs(id);
-          const sourceUrl = inputIds
-            .map((i) => getNode(i)?.nodeData?.outputUrl)
-            .find(Boolean);
-          const inputPrompt = inputIds
-            .map((i) => getNode(i)?.nodeData)
-            .filter((node) => node?.nodeType === "prompt")
-            .map((node) => node?.properties.content)
-            .filter(Boolean)
-            .join("\n");
-          const prompt = inputPrompt.trim();
-          const selectedModel = getGenerationModel(node.nodeData.properties.model);
-          const count = normalizeOutputCount(node.nodeData.properties.count, selectedModel.id);
-          const allUrls: string[] = [];
-          const currentOutputIds = runOutputIds.get(id) ?? [];
-          let lastError: string | undefined;
-
-          for (let i = 0; i < count; i++) {
-            const outputId = currentOutputIds[i];
-            const outputNode = outputId ? getNode(outputId) : null;
+        const results = await Promise.all(
+          Array.from({ length: count }, async (_, index) => {
             const result = await runGeneration({
-              prompt,
+              prompt: input.prompt,
               model: selectedModel.id,
               outputType: selectedModel.outputType,
-              imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
+              imageUrl: input.mediaUrl,
+              duration: generateNode.nodeData.properties.duration,
             });
-            if (result.url) {
-              allUrls.push(result.url);
-              if (outputNode?.nodeData) {
-                const outputUrls = [...(outputNode.nodeData.outputUrls ?? []), result.url];
-                updateNodeStatus(outputNode.id, "done", result.url, undefined, outputUrls);
-                outputNode.nodeData = {
-                  ...outputNode.nodeData,
-                  status: "done",
-                  outputUrl: result.url,
-                  outputUrls,
-                  error: undefined,
-                };
-              }
-              await saveGeneratedMedia({
-                projectId: project.id,
-                nodeId: outputNode?.id ?? id,
-                outputIndex: i,
-                mediaType: selectedModel.outputType,
-                url: result.url,
-                model: selectedModel.id,
-                prompt,
-                sourceUrl: sourceUrl,
+            return { index, result };
+          })
+        );
+
+        const allUrls: string[] = [];
+        let lastError: string | undefined;
+
+        for (const { index, result } of results) {
+          const outputId = outputIds[index];
+          if (result.url) {
+            allUrls[index] = result.url;
+            if (outputId) {
+              setNodeState(outputId, {
+                status: "done",
+                outputUrl: result.url,
+                outputUrls: [result.url],
+                error: undefined,
               });
-            } else {
-              lastError = result.error || "Generation failed";
-              console.error("OpenCreative workflow generation failed", {
-                projectId: project.id,
-                nodeId: id,
-                model: selectedModel.id,
-                outputType: selectedModel.outputType,
-                outputIndex: i,
+            }
+          } else {
+            lastError = result.error || "Generation failed";
+            anyError = true;
+            console.error("OpenCreative workflow generation failed", {
+              projectId: project.id,
+              nodeId: generateId,
+              model: selectedModel.id,
+              outputType: selectedModel.outputType,
+              outputIndex: index,
+              error: lastError,
+            });
+            if (outputId) {
+              setNodeState(outputId, {
+                status: "error",
                 error: lastError,
               });
-              if (outputNode?.nodeData) {
-                updateNodeStatus(
-                  outputNode.id,
-                  "error",
-                  outputNode.nodeData.outputUrl,
-                  lastError,
-                  outputNode.nodeData.outputUrls
-                );
-                outputNode.nodeData = {
-                  ...outputNode.nodeData,
-                  status: "error",
-                  outputUrl: outputNode.nodeData.outputUrl,
-                  error: lastError,
-                };
-              }
-              anyError = true;
             }
           }
+        }
 
-          if (allUrls.length > 0) {
-            updateNodeStatus(id, "done", allUrls[0], undefined, allUrls);
-          } else {
-            updateNodeStatus(id, "error", undefined, lastError || "Generation failed");
-          }
-        } else if (node.type === "output") {
-          if (node.nodeData.status === "idle") {
-            done.add(id);
-            continue;
-          }
+        const successfulResults = allUrls
+          .map((url, index) => (url ? { url, index } : null))
+          .filter((item): item is { url: string; index: number } => Boolean(item));
+        const successfulUrls = successfulResults.map((item) => item.url);
+        if (successfulResults.length > 0) {
+          setNodeState(generateId, {
+            status: "done",
+            outputUrl: successfulUrls[0],
+            outputUrls: successfulUrls,
+            error: undefined,
+          });
+          const saveResults = await Promise.allSettled(
+            successfulResults.map(({ url, index }) =>
+              saveGeneratedMedia({
+                projectId: project.id,
+                nodeId: outputIds[index] ?? generateId,
+                outputIndex: index,
+                mediaType: selectedModel.outputType,
+                url,
+                model: selectedModel.id,
+                prompt: input.prompt,
+                sourceUrl: input.sourceUrl,
+              })
+            )
+          );
+          anySaveError = saveResults.some((result) => result.status === "rejected");
         } else {
-          updateNodeStatus(id, "done", node.nodeData.outputUrl);
+          setNodeState(generateId, {
+            status: "error",
+            error: lastError || "Generation failed",
+          });
         }
-
-        done.add(id);
-
-        const outs = getOutputs(id);
-        for (const outId of outs) {
-          if (!done.has(outId)) {
-            const inputs = getInputs(outId);
-            if (inputs.every((i) => done.has(i))) {
-              queue.push(outId);
-            }
-          }
-        }
+        flushRunState();
       }
 
-      if (anyError) {
+      if (anyError && anySaveError) {
+        addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning" });
+      } else if (anyError) {
         addToast({ title: "Workflow finished with errors", message: "Generation errors were logged. Select failed output nodes for details.", variant: "warning" });
-      } else if (graph.length > 0) {
+      } else if (anySaveError) {
+        addToast({ title: "Workflow complete", message: "Outputs were created, but some gallery saves failed.", variant: "warning" });
+      } else {
         addToast({ title: "Workflow complete", message: "All nodes finished successfully.", variant: "success" });
       }
     } catch (err) {
@@ -367,7 +345,7 @@ function ProjectCanvasInner({
     } finally {
       setRunning(false);
     }
-  }, [elements, connections, running, project.id, updateNodeStatus, addElements, addToast]);
+  }, [elements, connections, running, project.id, replaceWorkflowGraph, commitWorkflowGraph, addToast]);
 
   const commands = useMemo(
     () => [
