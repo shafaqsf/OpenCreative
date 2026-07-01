@@ -7,12 +7,13 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { useCanvas, newElement } from "@/lib/canvas/context";
+import { useCanvas, newElement, newNode } from "@/lib/canvas/context";
 import { screenToWorld, worldToScreen } from "@/lib/canvas/geometry";
-import { getElementAtPoint } from "@/lib/canvas/hit-test";
+import { getElementAtPoint, getBounds } from "@/lib/canvas/hit-test";
 import { Shape } from "./shape";
 import { SelectionOverlay } from "./selection-overlay";
-import type { CanvasElement, Point } from "@/types/canvas";
+import type { CanvasElement, NodeType, Point } from "@/types/canvas";
+import { isNodeTool } from "@/types/canvas";
 
 type DragMode =
   | { kind: "none" }
@@ -30,6 +31,11 @@ type DragMode =
       kind: "move";
       start: Point;
       ids: string[];
+    }
+  | {
+      kind: "connect";
+      fromId: string;
+      start: Point;
     };
 
 export function Canvas() {
@@ -38,6 +44,7 @@ export function Canvas() {
     selectedIds,
     activeTool,
     camera,
+    connections,
     addElement,
     updateElement,
     removeElements,
@@ -46,6 +53,7 @@ export function Canvas() {
     clearSelection,
     moveElements,
     setCamera,
+    addConnection,
   } = useCanvas();
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -55,6 +63,7 @@ export function Canvas() {
     null
   );
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [connectEnd, setConnectEnd] = useState<Point | null>(null);
 
   const getMousePos = useCallback((e: ReactPointerEvent) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -85,12 +94,31 @@ export function Canvas() {
       if (activeTool === "select") {
         const hit = getElementAtPoint(elements, world.x, world.y);
         if (hit) {
+          if (isNodeTool(hit.type)) {
+            const b = getBounds(hit);
+            const nearInput = Math.abs(world.x - b.minX) < 10;
+            const nearOutput = Math.abs(world.x - b.minX - b.w) < 10;
+            if (nearOutput) {
+              clearSelection();
+              selectElements([hit.id]);
+              setDrag({ kind: "connect", fromId: hit.id, start: world });
+              setConnectEnd(world);
+              return;
+            }
+          }
           if (e.shiftKey) {
             toggleSelection(hit.id);
           } else if (!selectedIds.includes(hit.id)) {
             selectElements([hit.id]);
           }
-          setDrag({ kind: "move", start: world, ids: selectedIds.length > 0 && selectedIds.includes(hit.id) ? selectedIds : [hit.id] });
+          setDrag({
+            kind: "move",
+            start: world,
+            ids:
+              selectedIds.length > 0 && selectedIds.includes(hit.id)
+                ? selectedIds
+                : [hit.id],
+          });
         } else {
           if (!e.shiftKey) clearSelection();
           setMarquee({ start: world, end: world });
@@ -117,36 +145,23 @@ export function Canvas() {
         return;
       }
 
-      const el = newElement(activeTool, world.x, world.y);
-      if (activeTool.startsWith("node_")) {
-        el.width = 120;
-        el.height = 56;
-        el.fill = activeTool === "node_output" ? "#171717" : "#ffffff";
-        el.nodeData = { label: activeTool.replace("node_", "").replace("_", " ") };
+      if (isNodeTool(activeTool)) {
+        const el = newNode(activeTool as NodeType, world.x - 90, world.y - 40);
         addElement(el);
         selectElements([el.id]);
         return;
       }
+
+      const el = newElement(activeTool, world.x, world.y);
       addElement(el);
       setDrag({ kind: "create", start: world, el });
     },
-    [
-      activeTool,
-      elements,
-      selectedIds,
-      camera,
-      getMousePos,
-      getWorldPos,
-      addElement,
-      toggleSelection,
-      selectElements,
-      clearSelection,
-    ]
+    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, addElement, toggleSelection, selectElements, clearSelection, addConnection]
   );
 
   const onPointerMove = useCallback(
     (e: ReactPointerEvent<SVGSVGElement>) => {
-      if (drag.kind === "none" && !marquee) return;
+      if (drag.kind === "none" && !marquee && !connectEnd) return;
 
       if (drag.kind === "pan") {
         const pos = getMousePos(e);
@@ -187,16 +202,33 @@ export function Canvas() {
         return;
       }
 
+      if (drag.kind === "connect") {
+        const world = getWorldPos(e);
+        setConnectEnd(world);
+        return;
+      }
+
       if (marquee) {
         const world = getWorldPos(e);
         setMarquee({ start: marquee.start, end: world });
         return;
       }
     },
-    [drag, marquee, getMousePos, getWorldPos, setCamera, updateElement, moveElements]
+    [drag, marquee, connectEnd, getMousePos, getWorldPos, setCamera, updateElement, moveElements]
   );
 
   const onPointerUp = useCallback(() => {
+    if (drag.kind === "connect") {
+      const target = getElementAtPoint(elements, connectEnd?.x ?? 0, connectEnd?.y ?? 0);
+      if (target && target.id !== drag.fromId && isNodeTool(target.type)) {
+        const b = getBounds(target);
+        const nearInput = Math.abs((connectEnd?.x ?? 0) - b.minX) < 15;
+        if (nearInput) {
+          addConnection(drag.fromId, target.id);
+        }
+      }
+    }
+
     if (drag.kind === "create") {
       const current = elements.find((el) => el.id === drag.el.id);
       const w = Math.abs(current?.width ?? drag.el.width);
@@ -207,13 +239,14 @@ export function Canvas() {
         selectElements([drag.el.id]);
       }
     }
+
     if (marquee) {
       const minX = Math.min(marquee.start.x, marquee.end.x);
       const minY = Math.min(marquee.start.y, marquee.end.y);
       const maxX = Math.max(marquee.start.x, marquee.end.x);
       const maxY = Math.max(marquee.start.y, marquee.end.y);
       const hits = elements.filter((el) => {
-        const b = getElBounds(el);
+        const b = getBounds(el);
         return (
           b.minX >= minX &&
           b.minY >= minY &&
@@ -223,9 +256,11 @@ export function Canvas() {
       });
       if (hits.length > 0) selectElements(hits.map((h) => h.id));
     }
+
     setDrag({ kind: "none" });
     setMarquee(null);
-  }, [drag, marquee, removeElements, selectElements, elements]);
+    setConnectEnd(null);
+  }, [drag, marquee, connectEnd, elements, removeElements, selectElements, addConnection]);
 
   const onWheel = useCallback(
     (e: ReactWheelEvent<SVGSVGElement>) => {
@@ -250,9 +285,11 @@ export function Canvas() {
   const cursor =
     drag.kind === "pan"
       ? "grabbing"
-      : activeTool === "select"
-        ? "default"
-        : "crosshair";
+      : drag.kind === "connect"
+        ? "crosshair"
+        : activeTool === "select"
+          ? "default"
+          : "crosshair";
 
   const editingEl = editingTextId
     ? elements.find((el) => el.id === editingTextId)
@@ -284,84 +321,107 @@ export function Canvas() {
         onPointerLeave={onPointerUp}
         onWheel={onWheel}
       >
-      <g
-        style={{
-          transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
-          transformOrigin: "0 0",
-        }}
-      >
-        {elements.map((el) => (
-          <Shape key={el.id} element={el} />
-        ))}
-        <SelectionOverlay
-          elements={elements}
-          selectedIds={selectedIds}
-          zoom={camera.zoom}
-        />
-        {marquee && (
-          <rect
-            x={Math.min(marquee.start.x, marquee.end.x)}
-            y={Math.min(marquee.start.y, marquee.end.y)}
-            width={Math.abs(marquee.end.x - marquee.start.x)}
-            height={Math.abs(marquee.end.y - marquee.start.y)}
-            fill="rgba(23,23,23,0.06)"
-            stroke="#171717"
-            strokeWidth={1 / camera.zoom}
-            strokeDasharray={`${4 / camera.zoom} ${3 / camera.zoom}`}
+        <g
+          style={{
+            transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
+            transformOrigin: "0 0",
+          }}
+        >
+          {connections.map((conn) => {
+            const from = elements.find((el) => el.id === conn.fromId);
+            const to = elements.find((el) => el.id === conn.toId);
+            if (!from || !to) return null;
+            const fb = getBounds(from);
+            const tb = getBounds(to);
+            const x1 = fb.minX + fb.w;
+            const y1 = fb.minY + fb.h / 2;
+            const x2 = tb.minX;
+            const y2 = tb.minY + tb.h / 2;
+            const cx1 = x1 + Math.abs(x2 - x1) * 0.4;
+            const cx2 = x2 - Math.abs(x2 - x1) * 0.4;
+            return (
+              <path
+                key={conn.id}
+                d={`M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`}
+                fill="none"
+                stroke="#171717"
+                strokeWidth={1.5}
+                strokeLinecap="round"
+              />
+            );
+          })}
+
+          {drag.kind === "connect" && connectEnd && (
+            <line
+              x1={drag.start.x}
+              y1={drag.start.y}
+              x2={connectEnd.x}
+              y2={connectEnd.y}
+              stroke="#171717"
+              strokeWidth={1}
+              strokeDasharray="4 3"
+            />
+          )}
+
+          {elements.map((el) => (
+            <Shape key={el.id} element={el} />
+          ))}
+          <SelectionOverlay
+            elements={elements}
+            selectedIds={selectedIds}
+            zoom={camera.zoom}
           />
-        )}
-      </g>
-    </svg>
-    {editingScreen && editingEl && (
-      <input
-        ref={inputRef}
-        autoFocus
-        defaultValue={editingEl.text || ""}
-        onBlur={(e) => commitText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") commitText(e.currentTarget.value);
-          if (e.key === "Escape") {
-            if (!editingEl.text) removeElements([editingEl.id]);
-            setEditingTextId(null);
-          }
-        }}
-        className="absolute z-10 border border-neutral-900 bg-white px-1.5 py-0.5 text-sm text-neutral-900 outline-none"
-        style={{
-          left: editingScreen.x,
-          top: editingScreen.y,
-          minWidth: 80,
-          fontFamily: "ui-sans-serif, system-ui, sans-serif",
-        }}
-      />
-    )}
-  </div>
+          {marquee && (
+            <rect
+              x={Math.min(marquee.start.x, marquee.end.x)}
+              y={Math.min(marquee.start.y, marquee.end.y)}
+              width={Math.abs(marquee.end.x - marquee.start.x)}
+              height={Math.abs(marquee.end.y - marquee.start.y)}
+              fill="rgba(23,23,23,0.06)"
+              stroke="#171717"
+              strokeWidth={1 / camera.zoom}
+              strokeDasharray={`${4 / camera.zoom} ${3 / camera.zoom}`}
+            />
+          )}
+        </g>
+      </svg>
+      {editingScreen && editingEl && (
+        <input
+          ref={inputRef}
+          autoFocus
+          defaultValue={editingEl.text || ""}
+          onBlur={(e) => commitText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitText(e.currentTarget.value);
+            if (e.key === "Escape") {
+              if (!editingEl.text) removeElements([editingEl.id]);
+              setEditingTextId(null);
+            }
+          }}
+          className="absolute z-10 border border-neutral-900 bg-white px-1.5 py-0.5 text-sm text-neutral-900 outline-none"
+          style={{
+            left: editingScreen.x,
+            top: editingScreen.y,
+            minWidth: 80,
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          }}
+        />
+      )}
+    </div>
   );
 }
 
-function zoomAt(cam: { x: number; y: number; zoom: number }, mx: number, my: number, factor: number) {
+function zoomAt(
+  cam: { x: number; y: number; zoom: number },
+  mx: number,
+  my: number,
+  factor: number
+) {
   const newZoom = Math.min(Math.max(cam.zoom * factor, 0.1), 10);
   const ratio = newZoom / cam.zoom;
   return {
     zoom: newZoom,
     x: mx - (mx - cam.x) * ratio,
     y: my - (my - cam.y) * ratio,
-  };
-}
-
-function getElBounds(el: CanvasElement) {
-  if (el.points && el.points.length > 0) {
-    const xs = el.points.map((p) => p.x);
-    const ys = el.points.map((p) => p.y);
-    const minX = Math.min(...xs);
-    const minY = Math.min(...ys);
-    return { minX, minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
-  }
-  const w = Math.abs(el.width);
-  const h = Math.abs(el.height);
-  return {
-    minX: el.width >= 0 ? el.x : el.x + el.width,
-    minY: el.height >= 0 ? el.y : el.y + el.height,
-    w,
-    h,
   };
 }

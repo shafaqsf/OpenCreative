@@ -1,14 +1,15 @@
 "use client";
 
-import type { CanvasElement, NodeType } from "@/types/canvas";
+import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
+import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 
-const NODE_LABELS: Record<NodeType, string> = {
-  node_prompt: "Prompt",
-  node_image: "Image",
-  node_video: "Video",
-  node_upload: "Upload",
-  node_output: "Output",
+const NODE_COLORS: Record<NodeType, string> = {
+  script: "#f5f5f4",
+  source: "#f5f5f4",
+  generate: "#f5f5f4",
+  preview: "#171717",
+  export: "#171717",
 };
 
 export function Shape({ element }: { element: CanvasElement }) {
@@ -105,8 +106,8 @@ export function Shape({ element }: { element: CanvasElement }) {
       );
       break;
     default:
-      if (element.type.startsWith("node_")) {
-        shape = <WorkflowNode element={element} />;
+      if (isNodeTool(element.type) && element.nodeData) {
+        shape = <WorkflowNode element={element} nodeData={element.nodeData} />;
       }
       break;
   }
@@ -114,12 +115,17 @@ export function Shape({ element }: { element: CanvasElement }) {
   return <g>{shape}</g>;
 }
 
-function WorkflowNode({ element }: { element: CanvasElement }) {
+function WorkflowNode({
+  element,
+  nodeData,
+}: {
+  element: CanvasElement;
+  nodeData: NodeData;
+}) {
   const { minX, minY, w, h } = getBounds(element);
-  const type = element.type as NodeType;
-  const label = element.nodeData?.label || NODE_LABELS[type] || "Node";
-  const fill = type === "node_output" ? "#171717" : "#ffffff";
-  const textFill = type === "node_output" ? "#ffffff" : "#171717";
+  const { nodeType, label, status, outputUrl, error } = nodeData;
+  const isDark = NODE_COLORS[nodeType] === "#171717";
+
   return (
     <g>
       <rect
@@ -127,36 +133,136 @@ function WorkflowNode({ element }: { element: CanvasElement }) {
         y={minY}
         width={w}
         height={h}
-        rx={6}
-        fill={fill}
-        stroke={element.stroke}
+        rx={8}
+        fill={isDark ? "#171717" : "#ffffff"}
+        stroke={status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : element.stroke}
         strokeWidth={element.strokeWidth}
+        className={status === "running" ? "animate-pulse" : ""}
       />
-      <circle
-        cx={minX}
-        cy={minY + h / 2}
-        r={4}
-        fill="#171717"
-        stroke="none"
-      />
-      <circle
-        cx={minX + w}
-        cy={minY + h / 2}
-        r={4}
-        fill="#171717"
-        stroke="none"
-      />
-      <text
-        x={minX + w / 2}
-        y={minY + h / 2}
-        fill={textFill}
-        fontSize={12}
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        textAnchor="middle"
-        dominantBaseline="middle"
+
+      <foreignObject
+        x={minX}
+        y={minY}
+        width={w}
+        height={h}
       >
-        {label}
-      </text>
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            fontSize: 11,
+            fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            color: isDark ? "#fff" : "#171717",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "6px 8px 4px",
+              fontWeight: 600,
+              fontSize: 10,
+              opacity: 0.7,
+            }}
+          >
+            {label}
+          </div>
+
+          {status === "running" && (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+                fontSize: 10,
+                opacity: 0.6,
+              }}
+            >
+              Running…
+            </div>
+          )}
+
+          {status === "error" && (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0 8px",
+                fontSize: 9,
+                color: "#dc2626",
+                textAlign: "center",
+                wordBreak: "break-word",
+              }}
+            >
+              {error || "Error"}
+            </div>
+          )}
+
+          {status === "done" && outputUrl && nodeType === "preview" && (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <img
+                src={outputUrl}
+                alt=""
+                style={{
+                  maxWidth: "100%",
+                  maxHeight: "100%",
+                  objectFit: "contain",
+                }}
+              />
+            </div>
+          )}
+
+          {status === "done" && nodeType === "preview" && !outputUrl && (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+                opacity: 0.4,
+              }}
+            >
+              Done (no preview)
+            </div>
+          )}
+
+          {status === "idle" && nodeType === "preview" && (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+                opacity: 0.4,
+              }}
+            >
+              Waiting for input
+            </div>
+          )}
+        </div>
+      </foreignObject>
+
+      <g stroke={isDark ? "#ffffff" : "#171717"} strokeWidth={2}>
+        <circle cx={minX} cy={minY + h / 2} r={5} fill="#ffffff" />
+        <circle cx={minX + w} cy={minY + h / 2} r={5} fill="#ffffff" />
+      </g>
     </g>
   );
 }

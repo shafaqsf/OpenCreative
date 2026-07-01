@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import type { Camera, CanvasElement } from "@/types/canvas";
+import type { CanvasElement, Camera, Connection, WorkflowState } from "@/types/canvas";
 
 export type Folder = {
   id: string;
@@ -13,7 +13,7 @@ export type Project = {
   id: string;
   folder_id: string | null;
   name: string;
-  workflow: { elements: CanvasElement[]; camera: Camera };
+  workflow: WorkflowState;
   config: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -54,7 +54,10 @@ export async function listProjects(folderId?: string): Promise<Project[]> {
   if (folderId) query = query.eq("folder_id", folderId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []).map((p) => ({ ...p, workflow: normalizeWorkflow(p.workflow) }));
+  return (data ?? []).map((p) => ({
+    ...p,
+    workflow: normalizeWorkflow(p.workflow),
+  }));
 }
 
 export async function getProject(id: string): Promise<Project | null> {
@@ -81,7 +84,7 @@ export async function createProject(input: ProjectInput): Promise<Project> {
 
 export async function updateProjectWorkflow(
   id: string,
-  workflow: { elements: CanvasElement[]; camera: Camera }
+  workflow: WorkflowState
 ): Promise<Project> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -100,14 +103,24 @@ export async function deleteProject(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
-function normalizeWorkflow(raw: unknown): { elements: CanvasElement[]; camera: Camera } {
-  const empty = { elements: [] as CanvasElement[], camera: { x: 0, y: 0, zoom: 1 } };
+function normalizeWorkflow(raw: unknown): WorkflowState {
+  const empty: WorkflowState = {
+    elements: [],
+    camera: { x: 0, y: 0, zoom: 1 },
+    connections: [],
+  };
   if (typeof raw !== "object" || raw === null) return empty;
   const w = raw as Record<string, unknown>;
-  const elements = Array.isArray(w.elements) ? (w.elements as CanvasElement[]) : empty.elements;
-  const camera =
-    typeof w.camera === "object" && w.camera !== null
-      ? ({ ...empty.camera, ...(w.camera as Record<string, unknown>) } as Camera)
-      : empty.camera;
-  return { elements, camera };
+  return {
+    elements: Array.isArray(w.elements)
+      ? (w.elements as CanvasElement[])
+      : empty.elements,
+    camera:
+      typeof w.camera === "object" && w.camera !== null
+        ? ({ ...empty.camera, ...(w.camera as Record<string, unknown>) } as Camera)
+        : empty.camera,
+    connections: Array.isArray(w.connections)
+      ? (w.connections as Connection[])
+      : empty.connections,
+  };
 }

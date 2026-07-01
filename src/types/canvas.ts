@@ -9,32 +9,36 @@ export type ToolId =
   | "arrow"
   | "text"
   | "draw"
-  | "node_prompt"
-  | "node_image"
-  | "node_video"
-  | "node_upload"
-  | "node_output";
+  | "script"
+  | "source"
+  | "generate"
+  | "preview"
+  | "export";
 
 export type Point = { x: number; y: number };
 
-export type NodeType =
-  | "node_prompt"
-  | "node_image"
-  | "node_video"
-  | "node_upload"
-  | "node_output";
+export type NodeType = ToolId & ("script" | "source" | "generate" | "preview" | "export");
+
+export type NodeStatus = "idle" | "running" | "done" | "error";
 
 export type NodeData = {
-  label?: string;
-  prompt?: string;
-  url?: string;
-  model?: string;
-  status?: "idle" | "running" | "done" | "error";
+  nodeType: NodeType;
+  label: string;
+  properties: Record<string, string>;
+  status: NodeStatus;
+  outputUrl?: string;
+  error?: string;
+};
+
+export type Connection = {
+  id: string;
+  fromId: string;
+  toId: string;
 };
 
 export type CanvasElement = {
   id: string;
-  type: Exclude<ToolId, "select">;
+  type: ToolId;
   x: number;
   y: number;
   width: number;
@@ -54,6 +58,68 @@ export type Camera = {
   zoom: number;
 };
 
+export type WorkflowState = {
+  elements: CanvasElement[];
+  camera: Camera;
+  connections: Connection[];
+};
+
 export const DEFAULT_STROKE = "#111111";
 export const DEFAULT_FILL = "transparent";
 export const DEFAULT_STROKE_WIDTH = 2;
+
+export const NODE_CONFIG: Record<
+  NodeType,
+  { label: string; w: number; h: number; defaultProps: Record<string, string> }
+> = {
+  script: {
+    label: "Script",
+    w: 180,
+    h: 80,
+    defaultProps: { content: "" },
+  },
+  source: {
+    label: "Source",
+    w: 180,
+    h: 130,
+    defaultProps: { url: "", fileType: "image" },
+  },
+  generate: {
+    label: "Generate",
+    w: 180,
+    h: 110,
+    defaultProps: {
+      prompt: "",
+      model: "kwaivgi/kling-v3.0-pro",
+      duration: "5",
+    },
+  },
+  preview: {
+    label: "Preview",
+    w: 200,
+    h: 170,
+    defaultProps: {},
+  },
+  export: {
+    label: "Export",
+    w: 180,
+    h: 80,
+    defaultProps: { filename: "output", format: "mp4" },
+  },
+};
+
+const NODE_TYPES = new Set<ToolId>([
+  "script",
+  "source",
+  "generate",
+  "preview",
+  "export",
+]);
+
+export function isNodeTool(tool: ToolId): tool is NodeType {
+  return NODE_TYPES.has(tool);
+}
+
+export function isNodeElement(el: CanvasElement): el is CanvasElement & { nodeData: NodeData } {
+  return isNodeTool(el.type) && !!el.nodeData;
+}

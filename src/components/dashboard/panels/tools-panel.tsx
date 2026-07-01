@@ -11,11 +11,11 @@ import {
   Triangle,
   Diamond,
   Star,
-  MessageSquare,
+  FileText,
   Image,
-  Video,
-  Upload,
-  SquareArrowOutUpRight,
+  Sparkles,
+  Eye,
+  Download,
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
@@ -41,11 +41,11 @@ const tools: {
 ];
 
 const nodes: { id: ToolId; label: string; Icon: LucideIcon }[] = [
-  { id: "node_prompt", label: "Prompt", Icon: MessageSquare },
-  { id: "node_image", label: "Image", Icon: Image },
-  { id: "node_video", label: "Video", Icon: Video },
-  { id: "node_upload", label: "Upload", Icon: Upload },
-  { id: "node_output", label: "Output", Icon: SquareArrowOutUpRight },
+  { id: "script", label: "Script", Icon: FileText },
+  { id: "source", label: "Source", Icon: Image },
+  { id: "generate", label: "Generate", Icon: Sparkles },
+  { id: "preview", label: "Preview", Icon: Eye },
+  { id: "export", label: "Export", Icon: Download },
 ];
 
 export function ToolsPanel() {
@@ -53,48 +53,45 @@ export function ToolsPanel() {
 
   return (
     <>
-      <Panel title="Tools">
+      <Panel title="Annotate">
         <div className="grid grid-cols-4 gap-1">
-          {tools.map(({ id, label, Icon, shortcut }) => {
-            const isActive = activeTool === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setActiveTool(id)}
-                title={`${label} — ${shortcut}`}
-                className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-xs transition-colors ${
-                  isActive
-                    ? "border-neutral-900 bg-neutral-900 text-white"
-                    : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
-                }`}
-              >
-                <Icon className="size-4" strokeWidth={1.75} />
-              </button>
-            );
-          })}
+          {tools.map(({ id, label, Icon, shortcut }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTool(id)}
+              title={`${label} — ${shortcut}`}
+              className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-xs transition-colors ${
+                activeTool === id
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+              }`}
+            >
+              <Icon className="size-4" strokeWidth={1.75} />
+            </button>
+          ))}
         </div>
       </Panel>
-      <Panel title="Workflow nodes">
-        <div className="grid grid-cols-2 gap-1">
-          {nodes.map(({ id, label, Icon }) => {
-            const isActive = activeTool === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setActiveTool(id)}
-                title={label}
-                className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors ${
-                  isActive
-                    ? "border-neutral-900 bg-neutral-900 text-white"
-                    : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
-                }`}
-              >
-                <Icon className="size-3.5" strokeWidth={1.75} />
-                {label}
-              </button>
-            );
-          })}
+      <Panel title="Workflow">
+        <div className="flex flex-col gap-1">
+          {nodes.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTool(id)}
+              className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
+                activeTool === id
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+              }`}
+            >
+              <Icon className="size-3.5" strokeWidth={1.75} />
+              {label}
+            </button>
+          ))}
         </div>
+        <p className="mt-2 text-[10px] leading-relaxed text-neutral-400">
+          Click a node, then click the canvas to place it. Drag from the right
+          edge of a node to the left edge of another to connect.
+        </p>
       </Panel>
     </>
   );

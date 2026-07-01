@@ -10,11 +10,21 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Camera, CanvasElement, ToolId } from "@/types/canvas";
+import type {
+  Camera,
+  CanvasElement,
+  Connection,
+  NodeStatus,
+  NodeType,
+  ToolId,
+  WorkflowState,
+} from "@/types/canvas";
 import {
   DEFAULT_FILL,
   DEFAULT_STROKE,
   DEFAULT_STROKE_WIDTH,
+  NODE_CONFIG,
+  isNodeTool,
 } from "@/types/canvas";
 
 type CanvasContextValue = {
@@ -22,6 +32,7 @@ type CanvasContextValue = {
   selectedIds: string[];
   activeTool: ToolId;
   camera: Camera;
+  connections: Connection[];
 
   setActiveTool: (tool: ToolId) => void;
   addElement: (el: CanvasElement) => void;
@@ -34,30 +45,40 @@ type CanvasContextValue = {
   setCamera: (cam: Camera | ((prev: Camera) => Camera)) => void;
   bringToFront: (id: string) => void;
   sendToBack: (id: string) => void;
+  addConnection: (fromId: string, toId: string) => void;
+  removeConnection: (id: string) => void;
+  updateNodeProperties: (id: string, properties: Record<string, string>) => void;
+  updateNodeStatus: (
+    id: string,
+    status: NodeStatus,
+    outputUrl?: string,
+    error?: string
+  ) => void;
 };
 
 const CanvasContext = createContext<CanvasContextValue | null>(null);
 
 const STORAGE_KEY = "opencreative:canvas-v1";
 
-function uid() {
+export function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-function loadFromStorage(): { elements: CanvasElement[]; camera: Camera } {
+function loadFromStorage(): WorkflowState {
   if (typeof window === "undefined")
-    return { elements: [], camera: { x: 0, y: 0, zoom: 1 } };
+    return { elements: [], camera: { x: 0, y: 0, zoom: 1 }, connections: [] };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw)
-      return { elements: [], camera: { x: 0, y: 0, zoom: 1 } };
+      return { elements: [], camera: { x: 0, y: 0, zoom: 1 }, connections: [] };
     const parsed = JSON.parse(raw);
     return {
       elements: parsed.elements ?? [],
       camera: parsed.camera ?? { x: 0, y: 0, zoom: 1 },
+      connections: parsed.connections ?? [],
     };
   } catch {
-    return { elements: [], camera: { x: 0, y: 0, zoom: 1 } };
+    return { elements: [], camera: { x: 0, y: 0, zoom: 1 }, connections: [] };
   }
 }
 
@@ -67,14 +88,19 @@ export function CanvasProvider({
   onChange,
 }: {
   children: ReactNode;
-  initial?: { elements: CanvasElement[]; camera: Camera };
-  onChange?: (state: { elements: CanvasElement[]; camera: Camera }) => void;
+  initial?: WorkflowState;
+  onChange?: (state: WorkflowState) => void;
 }) {
   const initialState = initial ?? loadFromStorage();
-  const [elements, setElements] = useState<CanvasElement[]>(initialState.elements);
+  const [elements, setElements] = useState<CanvasElement[]>(
+    initialState.elements
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [camera, setCameraState] = useState<Camera>(initialState.camera);
+  const [connections, setConnections] = useState<Connection[]>(
+    initialState.connections
+  );
   const [mounted, setMounted] = useState(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -85,13 +111,13 @@ export function CanvasProvider({
 
   useEffect(() => {
     if (!mounted) return;
-    const state = { elements, camera };
+    const state: WorkflowState = { elements, camera, connections };
     if (onChangeRef.current) {
       onChangeRef.current(state);
     } else {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
-  }, [elements, camera, mounted]);
+  }, [elements, camera, connections, mounted]);
 
   const addElement = useCallback((el: CanvasElement) => {
     setElements((prev) => [...prev, el]);
@@ -107,9 +133,11 @@ export function CanvasProvider({
   );
 
   const removeElements = useCallback((ids: string[]) => {
-    setElements((prev) => prev.filter((el) => !ids.includes(el.id)));
-    setSelectedIds((prev) =>
-      prev.filter((id) => !ids.includes(id))
+    const idSet = new Set(ids);
+    setElements((prev) => prev.filter((el) => !idSet.has(el.id)));
+    setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
+    setConnections((prev) =>
+      prev.filter((c) => !idSet.has(c.fromId) && !idSet.has(c.toId))
     );
   }, []);
 
@@ -128,23 +156,23 @@ export function CanvasProvider({
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
 
-  const moveElements = useCallback((ids: string[], dx: number, dy: number) => {
-    setElements((prev) =>
-      prev.map((el) => {
-        if (!ids.includes(el.id)) return el;
-        if (el.points) {
-          return {
-            ...el,
-            points: el.points.map((p) => ({
-              x: p.x + dx,
-              y: p.y + dy,
-            })),
-          };
-        }
-        return { ...el, x: el.x + dx, y: el.y + dy };
-      })
-    );
-  }, []);
+  const moveElements = useCallback(
+    (ids: string[], dx: number, dy: number) => {
+      setElements((prev) =>
+        prev.map((el) => {
+          if (!ids.includes(el.id)) return el;
+          if (el.points) {
+            return {
+              ...el,
+              points: el.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+            };
+          }
+          return { ...el, x: el.x + dx, y: el.y + dy };
+        })
+      );
+    },
+    []
+  );
 
   const setCamera = useCallback(
     (cam: Camera | ((prev: Camera) => Camera)) => {
@@ -173,12 +201,51 @@ export function CanvasProvider({
     });
   }, []);
 
+  const addConnection = useCallback((fromId: string, toId: string) => {
+    setConnections((prev) => {
+      if (prev.some((c) => c.fromId === fromId && c.toId === toId))
+        return prev;
+      return [...prev, { id: uid(), fromId, toId }];
+    });
+  }, []);
+
+  const removeConnection = useCallback((id: string) => {
+    setConnections((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const updateNodeProperties = useCallback(
+    (id: string, properties: Record<string, string>) => {
+      setElements((prev) =>
+        prev.map((el) =>
+          el.id === id && el.nodeData
+            ? { ...el, nodeData: { ...el.nodeData, properties } }
+            : el
+        )
+      );
+    },
+    []
+  );
+
+  const updateNodeStatus = useCallback(
+    (id: string, status: NodeStatus, outputUrl?: string, error?: string) => {
+      setElements((prev) =>
+        prev.map((el) =>
+          el.id === id && el.nodeData
+            ? { ...el, nodeData: { ...el.nodeData, status, outputUrl, error } }
+            : el
+        )
+      );
+    },
+    []
+  );
+
   const value = useMemo<CanvasContextValue>(
     () => ({
       elements,
       selectedIds,
       activeTool,
       camera,
+      connections,
       setActiveTool,
       addElement,
       updateElement,
@@ -190,12 +257,17 @@ export function CanvasProvider({
       setCamera,
       bringToFront,
       sendToBack,
+      addConnection,
+      removeConnection,
+      updateNodeProperties,
+      updateNodeStatus,
     }),
     [
       elements,
       selectedIds,
       activeTool,
       camera,
+      connections,
       addElement,
       updateElement,
       removeElements,
@@ -206,6 +278,10 @@ export function CanvasProvider({
       setCamera,
       bringToFront,
       sendToBack,
+      addConnection,
+      removeConnection,
+      updateNodeProperties,
+      updateNodeStatus,
     ]
   );
 
@@ -247,4 +323,23 @@ export function newElement(
   };
 }
 
-export { uid };
+export function newNode(nodeType: NodeType, x: number, y: number): CanvasElement {
+  const cfg = NODE_CONFIG[nodeType];
+  return {
+    id: uid(),
+    type: nodeType,
+    x,
+    y,
+    width: cfg.w,
+    height: cfg.h,
+    stroke: "#171717",
+    fill: "#ffffff",
+    strokeWidth: 1.5,
+    nodeData: {
+      nodeType,
+      label: cfg.label,
+      properties: { ...cfg.defaultProps },
+      status: "idle",
+    },
+  };
+}

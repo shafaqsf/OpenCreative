@@ -2,21 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { CanvasProvider } from "@/lib/canvas/context";
+import { ArrowLeft, Loader2, Play } from "lucide-react";
+import { CanvasProvider, useCanvas } from "@/lib/canvas/context";
 import { updateProjectWorkflow } from "@/lib/projects/service";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
+import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
+import { runGeneration } from "@/lib/canvas/run-workflow";
 import type { Project } from "@/lib/projects/service";
+import type { WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
   const [saving, setSaving] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleChange = useCallback(
-    (state: { elements: Parameters<typeof updateProjectWorkflow>[1]["elements"]; camera: Parameters<typeof updateProjectWorkflow>[1]["camera"] }) => {
+    (state: WorkflowState) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(async () => {
         setSaving(true);
@@ -25,7 +28,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
         } finally {
           setSaving(false);
         }
-      }, 800);
+      }, 600);
     },
     [project.id]
   );
@@ -38,40 +41,166 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
 
   return (
     <CanvasProvider initial={project.workflow} onChange={handleChange}>
-      <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-white text-neutral-900">
-        <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="flex size-8 items-center justify-center rounded-md hover:bg-neutral-100"
-            >
-              <ArrowLeft className="size-4" />
-            </Link>
-            <div>
-              <h1 className="text-sm font-semibold">{project.name}</h1>
-              <p className="text-xs text-neutral-500">Build your workflow</p>
-            </div>
+      <ProjectCanvasInner project={project} saving={saving} />
+    </CanvasProvider>
+  );
+}
+
+function ProjectCanvasInner({
+  project,
+  saving,
+}: {
+  project: Project;
+  saving: boolean;
+}) {
+  const { elements, connections, updateNodeStatus } = useCanvas();
+  const [running, setRunning] = useState(false);
+
+  async function handleRun() {
+    if (running) return;
+    setRunning(true);
+
+    const getInputs = (nodeId: string) =>
+      connections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
+
+    const getOutputs = (nodeId: string) =>
+      connections.filter((c) => c.fromId === nodeId).map((c) => c.toId);
+
+    const getNode = (id: string) => elements.find((el) => el.id === id);
+
+    try {
+      const graph = elements.filter((el) => el.nodeData);
+      const done = new Set<string>();
+      const queue: string[] = [];
+
+      const enqueueIfReady = (nodeId: string) => {
+        const inputs = getInputs(nodeId);
+        if (inputs.every((i) => done.has(i)) && !done.has(nodeId)) {
+          queue.push(nodeId);
+        }
+      };
+
+      for (const n of graph) {
+        const inputs = getInputs(n.id);
+        if (inputs.length === 0) {
+          done.add(n.id);
+          const nd = n.nodeData!;
+          if (!nd.outputUrl) {
+            updateNodeStatus(n.id, "done", nd.properties.url || nd.properties.content);
+          }
+        }
+      }
+
+      for (const n of graph) {
+        if (!done.has(n.id)) enqueueIfReady(n.id);
+      }
+
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        if (done.has(id)) continue;
+        const node = getNode(id);
+        if (!node?.nodeData) continue;
+
+        if (node.type === "generate") {
+          updateNodeStatus(id, "running");
+          const inputIds = getInputs(id);
+          const sourceUrl = inputIds
+            .map((i) => getNode(i)?.nodeData?.outputUrl)
+            .find(Boolean);
+
+          const result = await runGeneration({
+            prompt: node.nodeData.properties.prompt || "",
+            model: node.nodeData.properties.model || "kwaivgi/kling-v3.0-pro",
+            imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
+          });
+
+          if (result.url) {
+            updateNodeStatus(id, "done", result.url);
+          } else {
+            updateNodeStatus(
+              id,
+              "error",
+              undefined,
+              result.error || "Generation failed"
+            );
+          }
+        } else {
+          const inputIds = getInputs(id);
+          const outputUrl = inputIds
+            .map((i) => getNode(i)?.nodeData?.outputUrl)
+            .find(Boolean);
+          updateNodeStatus(id, "done", outputUrl);
+        }
+
+        done.add(id);
+
+        const outs = getOutputs(id);
+        for (const outId of outs) {
+          if (!done.has(outId)) {
+            const inputIds = getInputs(outId);
+            if (inputIds.every((i) => done.has(i))) {
+              queue.push(outId);
+            }
+          }
+        }
+      }
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-white text-neutral-900">
+      <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="flex size-8 items-center justify-center rounded-md hover:bg-neutral-100"
+          >
+            <ArrowLeft className="size-4" />
+          </Link>
+          <div>
+            <h1 className="text-sm font-semibold">{project.name}</h1>
+            <p className="text-xs text-neutral-500">Build your workflow</p>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
           {saving && (
             <span className="flex items-center gap-1.5 text-xs text-neutral-400">
               <Loader2 className="size-3 animate-spin" />
               Saving…
             </span>
           )}
-        </header>
-
-        <div className="flex flex-1 overflow-hidden">
-          <aside className="w-56 overflow-y-auto border-r border-neutral-200 bg-neutral-50">
-            <ToolsPanel />
-            <LayersPanel />
-          </aside>
-
-          <main className="relative flex-1 overflow-hidden bg-neutral-100">
-            <Canvas />
-            <ZoomControls />
-          </main>
+          <button
+            onClick={handleRun}
+            disabled={running}
+            className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {running ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Play className="size-3.5" />
+            )}
+            {running ? "Running…" : "Run"}
+          </button>
         </div>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="w-56 overflow-y-auto border-r border-neutral-200 bg-neutral-50">
+          <ToolsPanel />
+          <LayersPanel />
+        </aside>
+
+        <main className="relative flex-1 overflow-hidden bg-neutral-100">
+          <Canvas />
+          <ZoomControls />
+        </main>
+
+        <aside className="w-64 overflow-y-auto border-l border-neutral-200 bg-white">
+          <PropertiesPanel />
+        </aside>
       </div>
-    </CanvasProvider>
+    </div>
   );
 }
