@@ -14,8 +14,6 @@ import {
   FileText,
   Image,
   Sparkles,
-  Eye,
-  Download,
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
@@ -40,12 +38,10 @@ const tools: {
   { id: "draw", label: "Draw", Icon: PenLine, shortcut: "D" },
 ];
 
-const nodes: { id: ToolId; label: string; Icon: LucideIcon }[] = [
-  { id: "script", label: "Script", Icon: FileText },
-  { id: "source", label: "Source", Icon: Image },
-  { id: "generate", label: "Generate", Icon: Sparkles },
-  { id: "preview", label: "Preview", Icon: Eye },
-  { id: "export", label: "Export", Icon: Download },
+const nodes: { id: ToolId; label: string; Icon: LucideIcon; desc: string }[] = [
+  { id: "script", label: "Script", Icon: FileText, desc: "Write ad copy or text input" },
+  { id: "source", label: "Source", Icon: Image, desc: "Paste or link to a media file" },
+  { id: "generate", label: "Generate", Icon: Sparkles, desc: "AI generation step" },
 ];
 
 export function ToolsPanel() {
@@ -73,7 +69,7 @@ export function ToolsPanel() {
       </Panel>
       <Panel title="Workflow">
         <div className="flex flex-col gap-1">
-          {nodes.map(({ id, label, Icon }) => (
+          {nodes.map(({ id, label, Icon, desc }) => (
             <button
               key={id}
               onClick={() => setActiveTool(id)}
@@ -84,13 +80,16 @@ export function ToolsPanel() {
               }`}
             >
               <Icon className="size-3.5" strokeWidth={1.75} />
-              {label}
+              <div className="text-left leading-tight">
+                <div>{label}</div>
+                <div className="text-[10px] opacity-60">{desc}</div>
+              </div>
             </button>
           ))}
         </div>
         <p className="mt-2 text-[10px] leading-relaxed text-neutral-400">
           Click a node, then click the canvas to place it. Drag from the right
-          edge of a node to the left edge of another to connect.
+          edge of one node to the left edge of another to connect.
         </p>
       </Panel>
     </>

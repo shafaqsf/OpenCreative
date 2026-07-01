@@ -125,11 +125,7 @@ function ProjectCanvasInner({
             );
           }
         } else {
-          const inputIds = getInputs(id);
-          const outputUrl = inputIds
-            .map((i) => getNode(i)?.nodeData?.outputUrl)
-            .find(Boolean);
-          updateNodeStatus(id, "done", outputUrl);
+          updateNodeStatus(id, "done", node.nodeData.outputUrl);
         }
 
         done.add(id);

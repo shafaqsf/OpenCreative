@@ -7,9 +7,7 @@ import { getBounds } from "@/lib/canvas/hit-test";
 const NODE_COLORS: Record<NodeType, string> = {
   script: "#f5f5f4",
   source: "#f5f5f4",
-  generate: "#f5f5f4",
-  preview: "#171717",
-  export: "#171717",
+  generate: "#ffffff",
 };
 
 export function Shape({ element }: { element: CanvasElement }) {
@@ -124,7 +122,8 @@ function WorkflowNode({
 }) {
   const { minX, minY, w, h } = getBounds(element);
   const { nodeType, label, status, outputUrl, error } = nodeData;
-  const isDark = NODE_COLORS[nodeType] === "#171717";
+  const strokeColor =
+    status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : element.stroke;
 
   return (
     <g>
@@ -134,18 +133,12 @@ function WorkflowNode({
         width={w}
         height={h}
         rx={8}
-        fill={isDark ? "#171717" : "#ffffff"}
-        stroke={status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : element.stroke}
+        fill={NODE_COLORS[nodeType]}
+        stroke={strokeColor}
         strokeWidth={element.strokeWidth}
-        className={status === "running" ? "animate-pulse" : ""}
       />
 
-      <foreignObject
-        x={minX}
-        y={minY}
-        width={w}
-        height={h}
-      >
+      <foreignObject x={minX} y={minY} width={w} height={h}>
         <div
           style={{
             width: "100%",
@@ -154,7 +147,7 @@ function WorkflowNode({
             flexDirection: "column",
             fontSize: 11,
             fontFamily: "ui-sans-serif, system-ui, sans-serif",
-            color: isDark ? "#fff" : "#171717",
+            color: "#171717",
             overflow: "hidden",
           }}
         >
@@ -206,13 +199,14 @@ function WorkflowNode({
             </div>
           )}
 
-          {status === "done" && outputUrl && nodeType === "preview" && (
+          {status === "done" && outputUrl && (
             <div
               style={{
                 flex: 1,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                padding: "0 4px 4px",
               }}
             >
               <img
@@ -222,12 +216,13 @@ function WorkflowNode({
                   maxWidth: "100%",
                   maxHeight: "100%",
                   objectFit: "contain",
+                  borderRadius: 4,
                 }}
               />
             </div>
           )}
 
-          {status === "done" && nodeType === "preview" && !outputUrl && (
+          {status === "done" && !outputUrl && (
             <div
               style={{
                 flex: 1,
@@ -238,11 +233,11 @@ function WorkflowNode({
                 opacity: 0.4,
               }}
             >
-              Done (no preview)
+              Done
             </div>
           )}
 
-          {status === "idle" && nodeType === "preview" && (
+          {status === "idle" && (
             <div
               style={{
                 flex: 1,
@@ -253,15 +248,27 @@ function WorkflowNode({
                 opacity: 0.4,
               }}
             >
-              Waiting for input
+              {nodeType === "generate" ? "Set prompt and run" : "Ready"}
             </div>
           )}
         </div>
       </foreignObject>
 
-      <g stroke={isDark ? "#ffffff" : "#171717"} strokeWidth={2}>
-        <circle cx={minX} cy={minY + h / 2} r={5} fill="#ffffff" />
-        <circle cx={minX + w} cy={minY + h / 2} r={5} fill="#ffffff" />
+      <g stroke="#171717" strokeWidth={2}>
+        <circle
+          cx={minX}
+          cy={minY + h / 2}
+          r={5}
+          fill="#ffffff"
+          className="cursor-crosshair"
+        />
+        <circle
+          cx={minX + w}
+          cy={minY + h / 2}
+          r={5}
+          fill="#ffffff"
+          className="cursor-crosshair"
+        />
       </g>
     </g>
   );

@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback } from "react";
 import { useCanvas } from "@/lib/canvas/context";
-import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
+import type { NodeData } from "@/types/canvas";
 
-const NODE_CONFIG = {
+const NODE_CONFIG: Record<string, { label: string; fields: { key: string; label: string; type: string; placeholder?: string; options?: { value: string; label: string }[] }[] }> = {
   script: {
     label: "Script",
-    fields: [{ key: "content", label: "Content", type: "textarea" }],
+    fields: [
+      { key: "content", label: "Content", type: "textarea", placeholder: "Write your script…" },
+    ],
   },
   source: {
     label: "Source",
@@ -43,26 +44,7 @@ const NODE_CONFIG = {
       { key: "duration", label: "Duration (s)", type: "number" },
     ],
   },
-  preview: {
-    label: "Preview",
-    fields: [],
-  },
-  export: {
-    label: "Export",
-    fields: [
-      { key: "filename", label: "Filename", type: "text", placeholder: "my-video" },
-      {
-        key: "format",
-        label: "Format",
-        type: "select",
-        options: [
-          { value: "mp4", label: "MP4" },
-          { value: "gif", label: "GIF" },
-        ],
-      },
-    ],
-  },
-} as const;
+};
 
 export function PropertiesPanel() {
   const {
@@ -86,11 +68,11 @@ export function PropertiesPanel() {
   }
 
   const el = selectedEl;
-  const nd = nodeData;
-  const cfg = NODE_CONFIG[nd.nodeType];
+  const nd: NodeData = nodeData;
+  const cfg = NODE_CONFIG[nd.nodeType as keyof typeof NODE_CONFIG] ?? { label: "Node", fields: [] };
   const inputConns = connections.filter((c) => c.toId === el.id);
-  const inputNodes = elements.filter((el) =>
-    inputConns.some((c) => c.fromId === el.id)
+  const inputNodes = elements.filter((other) =>
+    inputConns.some((c) => c.fromId === other.id)
   );
 
   function setField(key: string, value: string) {
@@ -103,8 +85,8 @@ export function PropertiesPanel() {
   return (
     <div className="flex flex-col gap-4 p-4 text-xs text-neutral-900">
       <div>
-        <h3 className="mb-1 font-semibold text-neutral-900">{cfg.label}</h3>
-        <p className="text-[10px] text-neutral-500">
+        <h3 className="mb-1 font-semibold">{cfg.label}</h3>
+        <p className="text-[10px] text-neutral-500 capitalize">
           Status: {nd.status}
         </p>
       </div>
@@ -127,7 +109,7 @@ export function PropertiesPanel() {
         </div>
       )}
 
-      {cfg.fields.map((field: any) => (
+      {cfg.fields.map((field) => (
         <label key={field.key} className="block">
           <span className="mb-0.5 block font-medium text-neutral-600">
             {field.label}
@@ -146,7 +128,7 @@ export function PropertiesPanel() {
               onChange={(e) => setField(field.key, e.target.value)}
               className="w-full rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-neutral-900"
             >
-              {field.options?.map((opt: { value: string; label: string }) => (
+              {field.options?.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
                 </option>
@@ -176,14 +158,30 @@ export function PropertiesPanel() {
           <span className="mb-1 block font-medium text-neutral-600">
             Output
           </span>
-          <a
-            href={nd.outputUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="block break-all rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-[10px] text-blue-600 underline"
-          >
-            {nd.outputUrl}
-          </a>
+          <div className="flex flex-col gap-2">
+            {nd.properties.fileType !== "video" && (
+              <img
+                src={nd.outputUrl}
+                alt=""
+                className="max-h-32 w-full rounded border border-neutral-200 object-cover"
+              />
+            )}
+            <a
+              href={nd.outputUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block break-all rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-[10px] text-blue-600 underline hover:bg-neutral-100"
+            >
+              Open original
+            </a>
+            <a
+              href={nd.outputUrl}
+              download
+              className="rounded-md bg-neutral-900 px-2 py-1.5 text-center text-[10px] text-white hover:bg-neutral-800"
+            >
+              Download
+            </a>
+          </div>
         </div>
       )}
 
@@ -196,15 +194,18 @@ export function PropertiesPanel() {
         </button>
       </div>
 
-      {inputConns.map((conn) => (
-        <button
-          key={conn.id}
-          onClick={() => removeConnection(conn.id)}
-          className="self-start rounded-md border border-neutral-200 px-2 py-1 text-[10px] text-neutral-500 hover:bg-neutral-100"
-        >
-          Disconnect from {inputNodes.find((n) => n.id === conn.fromId)?.nodeData?.label ?? "node"}
-        </button>
-      ))}
+      {inputConns.map((conn) => {
+        const src = elements.find((n) => n.id === conn.fromId);
+        return (
+          <button
+            key={conn.id}
+            onClick={() => removeConnection(conn.id)}
+            className="self-start rounded-md border border-neutral-200 px-2 py-1 text-[10px] text-neutral-500 hover:bg-neutral-100"
+          >
+            Disconnect {src?.nodeData?.label ?? "node"}
+          </button>
+        );
+      })}
     </div>
   );
 }

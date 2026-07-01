@@ -11,13 +11,11 @@ export type ToolId =
   | "draw"
   | "script"
   | "source"
-  | "generate"
-  | "preview"
-  | "export";
+  | "generate";
 
 export type Point = { x: number; y: number };
 
-export type NodeType = ToolId & ("script" | "source" | "generate" | "preview" | "export");
+export type NodeType = "script" | "source" | "generate";
 
 export type NodeStatus = "idle" | "running" | "done" | "error";
 
@@ -86,35 +84,17 @@ export const NODE_CONFIG: Record<
   },
   generate: {
     label: "Generate",
-    w: 180,
-    h: 110,
+    w: 200,
+    h: 180,
     defaultProps: {
       prompt: "",
       model: "kwaivgi/kling-v3.0-pro",
       duration: "5",
     },
   },
-  preview: {
-    label: "Preview",
-    w: 200,
-    h: 170,
-    defaultProps: {},
-  },
-  export: {
-    label: "Export",
-    w: 180,
-    h: 80,
-    defaultProps: { filename: "output", format: "mp4" },
-  },
 };
 
-const NODE_TYPES = new Set<ToolId>([
-  "script",
-  "source",
-  "generate",
-  "preview",
-  "export",
-]);
+const NODE_TYPES = new Set<ToolId>(["script", "source", "generate"]);
 
 export function isNodeTool(tool: ToolId): tool is NodeType {
   return NODE_TYPES.has(tool);
