@@ -34,6 +34,7 @@ import { updateProjectWorkflow } from "@/lib/projects/service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
+import { AlignToolbar } from "@/components/canvas/align-toolbar";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
@@ -103,6 +104,8 @@ function ProjectCanvasInner({
     duplicateSelection,
     toggleSnapToGrid,
     toggleShowGrid,
+    alignSelection,
+    distributeSelection,
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
@@ -256,6 +259,42 @@ function ProjectCanvasInner({
       shortcut: "Del",
       icon: <Trash2 className="size-3.5" />,
       onSelect: () => selectedIds.length > 0 && removeElements(selectedIds),
+    },
+    {
+      id: "align-left",
+      title: "Align left",
+      section: "Align",
+      onSelect: () => selectedIds.length >= 2 && alignSelection("left"),
+    },
+    {
+      id: "align-center-h",
+      title: "Align center horizontally",
+      section: "Align",
+      onSelect: () => selectedIds.length >= 2 && alignSelection("center-h"),
+    },
+    {
+      id: "align-right",
+      title: "Align right",
+      section: "Align",
+      onSelect: () => selectedIds.length >= 2 && alignSelection("right"),
+    },
+    {
+      id: "align-top",
+      title: "Align top",
+      section: "Align",
+      onSelect: () => selectedIds.length >= 2 && alignSelection("top"),
+    },
+    {
+      id: "align-center-v",
+      title: "Align center vertically",
+      section: "Align",
+      onSelect: () => selectedIds.length >= 2 && alignSelection("center-v"),
+    },
+    {
+      id: "align-bottom",
+      title: "Align bottom",
+      section: "Align",
+      onSelect: () => selectedIds.length >= 2 && alignSelection("bottom"),
     },
     {
       id: "view-reset-zoom",
@@ -513,6 +552,7 @@ function ProjectCanvasInner({
         </aside>
 
         <main className="relative flex-1 overflow-hidden bg-neutral-100">
+          <AlignToolbar />
           <Canvas />
           <ZoomControls />
         </main>

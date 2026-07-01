@@ -28,6 +28,7 @@ import {
 } from "@/types/canvas";
 import { useHistory } from "./use-history";
 import { cloneElements } from "./clone";
+import { getBounds } from "./hit-test";
 
 type CanvasContextValue = {
   elements: CanvasElement[];
@@ -67,6 +68,8 @@ type CanvasContextValue = {
   copyToClipboard: (ids: string[]) => void;
   duplicateSelection: () => void;
   selectAll: () => void;
+  alignSelection: (alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom") => void;
+  distributeSelection: (axis: "horizontal" | "vertical") => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -290,6 +293,134 @@ export function CanvasProvider({
     selectElements(history.present.elements.map((el) => el.id));
   }, [history.present.elements, selectElements]);
 
+  const alignSelection = useCallback(
+    (alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom") => {
+      const selected = history.present.elements.filter((el) =>
+        selectedIds.includes(el.id)
+      );
+      if (selected.length < 2) return;
+      const bounds = selected.map(getBounds);
+      let target = 0;
+      switch (alignment) {
+        case "left":
+          target = Math.min(...bounds.map((b) => b.minX));
+          break;
+        case "center-h":
+          target =
+            bounds.reduce((sum, b) => sum + b.minX + b.w / 2, 0) /
+            bounds.length;
+          break;
+        case "right":
+          target = Math.max(...bounds.map((b) => b.minX + b.w));
+          break;
+        case "top":
+          target = Math.min(...bounds.map((b) => b.minY));
+          break;
+        case "center-v":
+          target =
+            bounds.reduce((sum, b) => sum + b.minY + b.h / 2, 0) /
+            bounds.length;
+          break;
+        case "bottom":
+          target = Math.max(...bounds.map((b) => b.minY + b.h));
+          break;
+      }
+      history.set((prev) => ({
+        ...prev,
+        elements: prev.elements.map((el) => {
+          if (!selectedIds.includes(el.id)) return el;
+          const b = getBounds(el);
+          let dx = 0;
+          let dy = 0;
+          switch (alignment) {
+            case "left":
+              dx = target - b.minX;
+              break;
+            case "center-h":
+              dx = target - (b.minX + b.w / 2);
+              break;
+            case "right":
+              dx = target - (b.minX + b.w);
+              break;
+            case "top":
+              dy = target - b.minY;
+              break;
+            case "center-v":
+              dy = target - (b.minY + b.h / 2);
+              break;
+            case "bottom":
+              dy = target - (b.minY + b.h);
+              break;
+          }
+          if (el.points) {
+            return {
+              ...el,
+              points: el.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+            };
+          }
+          return { ...el, x: el.x + dx, y: el.y + dy };
+        }),
+      }));
+    },
+    [history.present.elements, selectedIds, history.set]
+  );
+
+  const distributeSelection = useCallback(
+    (axis: "horizontal" | "vertical") => {
+      const selected = history.present.elements.filter((el) =>
+        selectedIds.includes(el.id)
+      );
+      if (selected.length < 3) return;
+      const withBounds = selected.map((el) => ({ el, b: getBounds(el) }));
+      if (axis === "horizontal") {
+        withBounds.sort((a, b) => a.b.minX - b.b.minX);
+        const totalSpace =
+          withBounds[withBounds.length - 1].b.minX -
+          withBounds[0].b.minX;
+        const step = totalSpace / (withBounds.length - 1);
+        history.set((prev) => ({
+          ...prev,
+          elements: prev.elements.map((el) => {
+            const idx = withBounds.findIndex((item) => item.el.id === el.id);
+            if (idx === -1) return el;
+            const targetX = withBounds[0].b.minX + step * idx;
+            const dx = targetX - withBounds[idx].b.minX;
+            if (el.points) {
+              return {
+                ...el,
+                points: el.points.map((p) => ({ x: p.x + dx, y: p.y })),
+              };
+            }
+            return { ...el, x: el.x + dx, y: el.y };
+          }),
+        }));
+      } else {
+        withBounds.sort((a, b) => a.b.minY - b.b.minY);
+        const totalSpace =
+          withBounds[withBounds.length - 1].b.minY -
+          withBounds[0].b.minY;
+        const step = totalSpace / (withBounds.length - 1);
+        history.set((prev) => ({
+          ...prev,
+          elements: prev.elements.map((el) => {
+            const idx = withBounds.findIndex((item) => item.el.id === el.id);
+            if (idx === -1) return el;
+            const targetY = withBounds[0].b.minY + step * idx;
+            const dy = targetY - withBounds[idx].b.minY;
+            if (el.points) {
+              return {
+                ...el,
+                points: el.points.map((p) => ({ x: p.x, y: p.y + dy })),
+              };
+            }
+            return { ...el, x: el.x, y: el.y + dy };
+          }),
+        }));
+      }
+    },
+    [history.present.elements, selectedIds, history.set]
+  );
+
   const addConnection = useCallback(
     (fromId: string, toId: string) => {
       history.set((prev) => {
@@ -382,6 +513,8 @@ export function CanvasProvider({
       copyToClipboard,
       duplicateSelection,
       selectAll,
+      alignSelection,
+      distributeSelection,
       undo: history.undo,
       redo: history.redo,
       canUndo: history.canUndo,
@@ -414,6 +547,8 @@ export function CanvasProvider({
       copyToClipboard,
       duplicateSelection,
       selectAll,
+      alignSelection,
+      distributeSelection,
       toggleSnapToGrid,
       toggleShowGrid,
       history.undo,
