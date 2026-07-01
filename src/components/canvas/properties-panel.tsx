@@ -42,8 +42,8 @@ const NODE_CONFIG: Record<
           { value: "minimax/hailuo-2.3", label: "Hailuo 2.3" },
         ],
       },
-      { key: "duration", label: "Duration (s)", type: "number" },
-      { key: "count", label: "Outputs", type: "number" },
+      { key: "duration", label: "Duration (s)", type: "number_min0" },
+      { key: "count", label: "Outputs", type: "number_min1" },
     ],
   },
   output: {
@@ -155,9 +155,10 @@ export function PropertiesPanel() {
                 </option>
               ))}
             </select>
-          ) : field.type === "number" ? (
+          ) : field.type === "number" || field.type === "number_min0" || field.type === "number_min1" ? (
             <input
               type="number"
+              min={field.type === "number_min0" ? "0" : field.type === "number_min1" ? "1" : undefined}
               value={nd.properties[field.key] ?? ""}
               onChange={(e) => setField(field.key, e.target.value)}
               className="w-full rounded-md border border-neutral-200 px-2 py-1.5 text-xs outline-none focus:border-neutral-900"

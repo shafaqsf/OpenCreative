@@ -8,7 +8,7 @@ const NODE_COLORS: Record<NodeType, string> = {
   prompt: "#f5f5f4",
   source: "#f5f5f4",
   generate: "#ffffff",
-  output: "#171717",
+  output: "#ffffff",
 };
 
 export function Shape({ element }: { element: CanvasElement }) {

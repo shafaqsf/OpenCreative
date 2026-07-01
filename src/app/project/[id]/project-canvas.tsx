@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Play } from "lucide-react";
-import { CanvasProvider, useCanvas } from "@/lib/canvas/context";
+import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
 import { updateProjectWorkflow } from "@/lib/projects/service";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
@@ -53,12 +53,73 @@ function ProjectCanvasInner({
   project: Project;
   saving: boolean;
 }) {
-  const { elements, connections, updateNodeStatus } = useCanvas();
+  const { elements, connections, updateNodeStatus, addElement, addConnection, removeElements } = useCanvas();
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    const nowConnections = connections;
+    for (const gen of elements) {
+      if (gen.type !== "generate" || !gen.nodeData) continue;
+      const count = Math.max(1, parseInt(gen.nodeData.properties.count || "1", 10));
+
+      const outConns = nowConnections.filter((c) => c.fromId === gen.id);
+      const existingOut: string[] = outConns
+        .map((c) => c.toId)
+        .filter((id) => elements.find((e) => e.id === id)?.type === "output");
+
+      const genBounds = { x: gen.x, y: gen.y, w: gen.width, h: gen.height };
+
+      if (existingOut.length > count) {
+        const toRemove = existingOut.slice(count);
+        removeElements(toRemove);
+      } else if (existingOut.length < count) {
+        for (let i = existingOut.length; i < count; i++) {
+          const outX = genBounds.x + genBounds.w + 60;
+          const outY = genBounds.y + i * 80;
+          const outEl = newNode("output", outX, outY);
+          outEl.nodeData!.properties.outputIndex = String(i);
+          addElement(outEl);
+          addConnection(gen.id, outEl.id);
+        }
+      }
+    }
+  }, [elements, connections, addElement, addConnection, removeElements]);
 
   async function handleRun() {
     if (running) return;
     setRunning(true);
+
+    const nowElements = elements;
+    const nowConnections = connections;
+    const getOutputsNow = (nodeId: string) =>
+      nowConnections.filter((c) => c.fromId === nodeId).map((c) => c.toId);
+
+    for (const gen of nowElements) {
+      if (gen.type !== "generate" || !gen.nodeData) continue;
+      const count = Math.max(1, parseInt(gen.nodeData.properties.count || "1", 10));
+      const existingOut: string[] = [];
+
+      let outConn = nowConnections.filter((c) => c.fromId === gen.id);
+      for (const c of outConn) {
+        const t = nowElements.find((e) => e.id === c.toId);
+        if (t?.type === "output") existingOut.push(c.toId);
+      }
+
+      if (existingOut.length > count) {
+        const toRemove = existingOut.slice(count);
+        removeElements(toRemove);
+      } else if (existingOut.length < count) {
+        const genBounds = { x: gen.x, y: gen.y, w: gen.width, h: gen.height };
+        for (let i = existingOut.length; i < count; i++) {
+          const outX = genBounds.x + genBounds.w + 60;
+          const outY = genBounds.y + i * 80;
+          const outEl = newNode("output", outX, outY);
+          outEl.nodeData!.properties.outputIndex = String(i);
+          addElement(outEl);
+          addConnection(gen.id, outEl.id);
+        }
+      }
+    }
 
     const getInputs = (nodeId: string) =>
       connections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
