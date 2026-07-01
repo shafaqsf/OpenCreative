@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { useCanvas } from "@/lib/canvas/context";
+import { newNode, uid, useCanvas } from "@/lib/canvas/context";
 import {
   GENERATION_MODELS,
   getGenerationModel,
@@ -73,6 +73,7 @@ export function PropertiesPanel() {
     elements,
     selectedIds,
     connections,
+    addElements,
     removeElements,
     removeConnection,
     updateNodeProperties,
@@ -111,25 +112,76 @@ export function PropertiesPanel() {
   function setField(key: string, value: string) {
     if (nd.nodeType === "generate" && key === "model") {
       const nextModel = getGenerationModel(value);
-      updateNodeProperties(el.id, {
+      const properties = {
         ...nd.properties,
         model: nextModel.id,
         outputType: nextModel.outputType,
         outputFormat: nextModel.outputFormat,
         count: String(normalizeOutputCount(nd.properties.count, nextModel.id)),
-      });
+      };
+      updateNodeProperties(el.id, properties);
+      syncGenerateOutputs(properties);
       return;
     }
 
     if (nd.nodeType === "generate" && key === "count") {
-      updateNodeProperties(el.id, {
+      const properties = {
         ...nd.properties,
         count: String(normalizeOutputCount(value, nd.properties.model)),
-      });
+      };
+      updateNodeProperties(el.id, properties);
+      syncGenerateOutputs(properties);
       return;
     }
 
     updateNodeProperties(el.id, { ...nd.properties, [key]: value });
+  }
+
+  function syncGenerateOutputs(generateProps: Record<string, string>) {
+    if (nd.nodeType !== "generate") return;
+    const model = getGenerationModel(generateProps.model);
+    const count = normalizeOutputCount(generateProps.count, model.id);
+    const outputConnections = connections
+      .filter((connection) => connection.fromId === el.id)
+      .map((connection) => ({
+        connection,
+        output: elements.find((item) => item.id === connection.toId && item.type === "output"),
+      }))
+      .filter((item): item is { connection: { id: string; fromId: string; toId: string }; output: NonNullable<typeof item.output> } =>
+        Boolean(item.output)
+      );
+
+    outputConnections.slice(0, count).forEach(({ output }, index) => {
+      if (!output.nodeData) return;
+      updateNodeProperties(output.id, {
+        ...output.nodeData.properties,
+        outputIndex: String(index),
+        outputType: model.outputType,
+        outputFormat: model.outputFormat,
+      });
+    });
+
+    const extraOutputs = outputConnections.slice(count).map(({ output }) => output.id);
+    if (extraOutputs.length > 0) removeElements(extraOutputs);
+
+    const missing = count - outputConnections.length;
+    if (missing <= 0) return;
+
+    const newOutputs = Array.from({ length: missing }, (_, offset) => {
+      const index = outputConnections.length + offset;
+      const output = newNode("output", el.x + el.width + 60, el.y + index * 120);
+      output.nodeData!.properties = {
+        ...output.nodeData!.properties,
+        outputIndex: String(index),
+        outputType: model.outputType,
+        outputFormat: model.outputFormat,
+      };
+      return output;
+    });
+    addElements(
+      newOutputs,
+      newOutputs.map((output) => ({ id: uid(), fromId: el.id, toId: output.id }))
+    );
   }
 
   async function handleUpload(file: File) {
