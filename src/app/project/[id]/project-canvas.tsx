@@ -53,8 +53,20 @@ function ProjectCanvasInner({
   project: Project;
   saving: boolean;
 }) {
-  const { elements, connections, updateNodeStatus, addElement, addConnection, removeElements } = useCanvas();
+  const { elements, connections, updateNodeStatus, addElement, addConnection, removeElements, selectedIds } = useCanvas();
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const target = e.target as HTMLElement;
+        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return;
+        if (selectedIds.length > 0) removeElements(selectedIds);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedIds, removeElements]);
 
   useEffect(() => {
     const nowConnections = connections;

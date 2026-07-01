@@ -5,10 +5,17 @@ import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 
 const NODE_COLORS: Record<NodeType, string> = {
-  prompt: "#f5f5f4",
-  source: "#f5f5f4",
+  prompt: "#fafafa",
+  source: "#fafafa",
   generate: "#ffffff",
   output: "#ffffff",
+};
+
+const NODE_BORDERS: Record<NodeType, string> = {
+  prompt: "#d4d4d4",
+  source: "#d4d4d4",
+  generate: "#171717",
+  output: "#a3a3a3",
 };
 
 export function Shape({ element }: { element: CanvasElement }) {
@@ -123,13 +130,13 @@ function WorkflowNode({
 }) {
   const { minX, minY, w, h } = getBounds(element);
   const { nodeType, label, status, outputUrl, outputUrls, error } = nodeData;
-  const isDark = NODE_COLORS[nodeType] === "#171717";
-  const textColor = isDark ? "#ffffff" : "#171717";
+  const border = NODE_BORDERS[nodeType];
   const strokeColor =
-    status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : element.stroke;
+    status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : border;
+  const strokeW = status === "running" ? 2 : 1.5;
 
-  const outputIndex = parseInt(nodeData.properties.outputIndex || "0", 10);
-  const displayUrl = outputUrl || (outputUrls?.length ? outputUrls[outputIndex] : undefined);
+  const displayUrl = outputUrl || (outputUrls && outputUrls.length > 0 ? outputUrls[0] : undefined);
+  const showMedia = (status === "done" || status === "idle") && displayUrl;
 
   return (
     <g>
@@ -138,11 +145,26 @@ function WorkflowNode({
         y={minY}
         width={w}
         height={h}
-        rx={8}
+        rx={10}
         fill={NODE_COLORS[nodeType]}
         stroke={strokeColor}
-        strokeWidth={element.strokeWidth}
+        strokeWidth={strokeW}
       />
+
+      {status === "running" && (
+        <rect
+          x={minX}
+          y={minY}
+          width={w}
+          height={h}
+          rx={10}
+          fill="none"
+          stroke="#2563eb"
+          strokeWidth={1.5}
+          strokeDasharray={`${8} ${4}`}
+          opacity={0.5}
+        />
+      )}
 
       <foreignObject x={minX} y={minY} width={w} height={h}>
         <div
@@ -151,9 +173,7 @@ function WorkflowNode({
             height: "100%",
             display: "flex",
             flexDirection: "column",
-            fontSize: 11,
             fontFamily: "ui-sans-serif, system-ui, sans-serif",
-            color: textColor,
             overflow: "hidden",
           }}
         >
@@ -161,16 +181,15 @@ function WorkflowNode({
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 4,
-              padding: "6px 8px 4px",
+              gap: 6,
+              padding: "8px 10px 6px",
+              fontSize: 11,
               fontWeight: 600,
-              fontSize: 10,
-              opacity: 0.7,
+              color: "#525252",
+              letterSpacing: "0.02em",
             }}
           >
-            {nodeType === "output" && outputUrls && outputUrls.length > 1
-              ? `${label} #${(parseInt(nodeData.properties.outputIndex || "0", 10) + 1)}`
-              : label}
+            {element.customLabel || label}
           </div>
 
           {status === "running" && (
@@ -178,14 +197,34 @@ function WorkflowNode({
               style={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 4,
-                fontSize: 10,
-                opacity: 0.6,
+                padding: "0 12px",
+                color: "#2563eb",
+                fontSize: 11,
               }}
             >
-              Running…
+              <div>Generating…</div>
+              <div
+                style={{
+                  width: "70%",
+                  height: 2,
+                  background: "#e5e7eb",
+                  borderRadius: 1,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: "60%",
+                    background: "#2563eb",
+                    animation: "pulse 1.5s infinite",
+                  }}
+                />
+              </div>
             </div>
           )}
 
@@ -196,29 +235,29 @@ function WorkflowNode({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "0 8px",
-                fontSize: 9,
+                padding: "0 10px",
+                fontSize: 10,
                 color: "#dc2626",
                 textAlign: "center",
                 wordBreak: "break-word",
               }}
             >
-              {error || "Error"}
+              {error || "Failed"}
             </div>
           )}
 
-          {status === "done" && displayUrl && (
+          {showMedia && (
             <div
               style={{
                 flex: 1,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "0 4px 4px",
+                padding: "2px 6px 6px",
               }}
             >
               <img
-                src={displayUrl}
+                src={displayUrl!}
                 alt=""
                 style={{
                   maxWidth: "100%",
@@ -230,7 +269,7 @@ function WorkflowNode({
             </div>
           )}
 
-          {(status === "idle" || (status === "done" && !displayUrl)) && (
+          {!showMedia && status === "idle" && (
             <div
               style={{
                 flex: 1,
@@ -238,34 +277,40 @@ function WorkflowNode({
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 10,
-                opacity: 0.4,
+                color: "#a3a3a3",
               }}
             >
               {nodeType === "generate"
-                ? "Set prompt and run"
+                ? "Ready to generate"
                 : nodeType === "output"
-                  ? "Waiting for generation"
-                  : "Ready"}
+                  ? "Awaiting result"
+                  : nodeType === "prompt"
+                    ? "Text input"
+                    : "Media input"}
+            </div>
+          )}
+
+          {status === "done" && !displayUrl && nodeType !== "output" && (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+                color: "#525252",
+                fontWeight: 500,
+              }}
+            >
+              Done
             </div>
           )}
         </div>
       </foreignObject>
 
-      <g stroke={isDark ? "#ffffff" : "#171717"} strokeWidth={2}>
-        <circle
-          cx={minX}
-          cy={minY + h / 2}
-          r={5}
-          fill="#ffffff"
-          className="cursor-crosshair"
-        />
-        <circle
-          cx={minX + w}
-          cy={minY + h / 2}
-          r={5}
-          fill="#ffffff"
-          className="cursor-crosshair"
-        />
+      <g stroke={strokeColor} strokeWidth={1.5}>
+        <circle cx={minX} cy={minY + h / 2} r={5} fill="#ffffff" />
+        <circle cx={minX + w} cy={minY + h / 2} r={5} fill="#ffffff" />
       </g>
     </g>
   );

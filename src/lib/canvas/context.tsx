@@ -42,6 +42,7 @@ type CanvasContextValue = {
   toggleSelection: (id: string) => void;
   clearSelection: () => void;
   moveElements: (ids: string[], dx: number, dy: number) => void;
+  renameElement: (id: string, label: string) => void;
   setCamera: (cam: Camera | ((prev: Camera) => Camera)) => void;
   bringToFront: (id: string) => void;
   sendToBack: (id: string) => void;
@@ -157,6 +158,12 @@ export function CanvasProvider({
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
 
+  const renameElement = useCallback((id: string, label: string) => {
+    setElements((prev) =>
+      prev.map((el) => (el.id === id ? { ...el, customLabel: label } : el))
+    );
+  }, []);
+
   const moveElements = useCallback(
     (ids: string[], dx: number, dy: number) => {
       setElements((prev) =>
@@ -264,6 +271,7 @@ export function CanvasProvider({
       toggleSelection,
       clearSelection,
       moveElements,
+      renameElement,
       setCamera,
       bringToFront,
       sendToBack,
@@ -285,6 +293,7 @@ export function CanvasProvider({
       toggleSelection,
       clearSelection,
       moveElements,
+      renameElement,
       setCamera,
       bringToFront,
       sendToBack,

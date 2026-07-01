@@ -46,6 +46,7 @@ export type CanvasElement = {
   rotation?: number;
   points?: Point[];
   text?: string;
+  customLabel?: string;
   nodeData?: NodeData;
   stroke: string;
   fill: string;
