@@ -197,7 +197,7 @@ export function ToolsPanel() {
               onClick={() => setActiveTool(id)}
               className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
                 activeTool === id
-                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  ? "border-neutral-300 bg-neutral-100 text-neutral-900 shadow-inner"
                   : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
               }`}
             >

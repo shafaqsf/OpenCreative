@@ -49,7 +49,7 @@ export async function runGeneration(params: {
     }
 
     const json = await res.json();
-    const foundUrl = findUrl(json);
+    const foundUrl = findMediaUrl(json);
     if (foundUrl) return { url: foundUrl };
 
     const content = json.choices?.[0]?.message?.content;
@@ -62,7 +62,7 @@ export async function runGeneration(params: {
       return { error: "No content in response" };
     }
 
-    const urlMatch = stringifyContent(content).match(/https?:\/\/[^\s<>"]+/);
+    const urlMatch = stringifyContent(content).match(MEDIA_URL_RE);
     if (urlMatch) return { url: urlMatch[0] };
 
     console.error("OpenCreative generation response did not include a media URL", {
@@ -86,27 +86,29 @@ function stringifyContent(content: unknown): string {
   return typeof content === "string" ? content : JSON.stringify(content);
 }
 
-function findUrl(value: unknown): string | undefined {
+const MEDIA_URL_RE = /(https?:\/\/[^\s<>"]+|data:(?:image|video)\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+)/;
+
+function findMediaUrl(value: unknown): string | undefined {
   if (typeof value === "string") {
-    return value.match(/https?:\/\/[^\s<>"]+/)?.[0];
+    return value.match(MEDIA_URL_RE)?.[0];
   }
   if (!value || typeof value !== "object") return undefined;
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findUrl(item);
+      const found = findMediaUrl(item);
       if (found) return found;
     }
     return undefined;
   }
 
   const record = value as Record<string, unknown>;
-  for (const key of ["url", "image_url", "video_url", "output_url", "asset_url"]) {
-    const found = findUrl(record[key]);
+  for (const key of ["url", "image_url", "video_url", "output_url", "asset_url", "images", "videos"]) {
+    const found = findMediaUrl(record[key]);
     if (found) return found;
   }
   for (const child of Object.values(record)) {
-    const found = findUrl(child);
+    const found = findMediaUrl(child);
     if (found) return found;
   }
   return undefined;

@@ -307,6 +307,7 @@ function WorkflowNode({
             >
               {nodeType === "generate" ? (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     runWorkflow?.();
@@ -354,6 +355,7 @@ function WorkflowNode({
                 Done
               </span>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   runWorkflow?.();
