@@ -137,3 +137,59 @@ export function sortTemplates(templates: Template[]): Template[] {
     return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
   });
 }
+
+export function instantiateTemplate(
+  template: Template,
+  offset = { x: 32, y: 32 }
+): { elements: CanvasElement[]; connections: Connection[] } {
+  const idMap = new Map<string, string>();
+  const elements = template.elements.map((el) => {
+    const id = uid();
+    idMap.set(el.id, id);
+    return cloneElement(el, id, offset);
+  });
+  const connections = template.connections
+    .map((conn) => {
+      const fromId = idMap.get(conn.fromId);
+      const toId = idMap.get(conn.toId);
+      if (!fromId || !toId) return null;
+      return { id: uid(), fromId, toId };
+    })
+    .filter((conn): conn is Connection => Boolean(conn));
+  return { elements, connections };
+}
+
+export function snapshotTemplate(input: Template): Template {
+  return normalizeTemplate({
+    ...input,
+    elements: input.elements.map((el) => cloneElement(el, el.id, { x: 0, y: 0 })),
+    connections: input.connections.map((conn) => ({ ...conn })),
+  });
+}
+
+function cloneElement(
+  el: CanvasElement,
+  id: string,
+  offset: { x: number; y: number }
+): CanvasElement {
+  return {
+    ...el,
+    id,
+    x: el.x + offset.x,
+    y: el.y + offset.y,
+    points: el.points?.map((point) => ({
+      x: point.x + offset.x,
+      y: point.y + offset.y,
+    })),
+    nodeData: el.nodeData
+      ? {
+          ...el.nodeData,
+          properties: { ...el.nodeData.properties },
+          outputUrl: undefined,
+          outputUrls: undefined,
+          error: undefined,
+          status: "idle",
+        }
+      : undefined,
+  };
+}

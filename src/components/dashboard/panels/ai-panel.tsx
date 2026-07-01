@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Archive, ArchiveRestore, Check, Clipboard, History, Loader2, Pencil, Pin, Play, RotateCcw, Send, Sparkles, Trash2 } from "lucide-react";
-import { Panel } from "./panel";
+import { Archive, ArchiveRestore, Clipboard, History, Loader2, MessageSquare, Pencil, Pin, Play, RotateCcw, Send, Sparkles, Trash2, X } from "lucide-react";
 import { newNode, uid, useCanvas } from "@/lib/canvas/context";
 import { useToast } from "@/lib/toast/context";
 import type { AgentAction, AgentMessage, AgentResponse, CanvasCheckpoint } from "@/types/agent";
@@ -49,6 +48,7 @@ export function AIPanel({
   const { addToast } = useToast();
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
   const [conversation, setConversation] = useState<ConversationState>(emptyConversation);
 
   const storageKey = `opencreative:agent:${projectId}`;
@@ -230,8 +230,47 @@ export function AIPanel({
     addToast({ title: "Checkpoint restored", message: checkpoint.name, variant: "success" });
   }
 
+  if (!open) {
+    return (
+      <div className="fixed bottom-5 left-1/2 z-50 w-[min(560px,calc(100vw-32px))] -translate-x-1/2">
+        <button
+          onClick={() => setOpen(true)}
+          className="flex w-full items-center gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-left shadow-xl shadow-black/10 transition-colors hover:border-neutral-900"
+        >
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-white">
+            <Sparkles className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-neutral-900">OpenCreative Agent</p>
+            <p className="truncate text-xs text-neutral-500">Ask it to build, edit, run, or checkpoint this canvas</p>
+          </div>
+          <MessageSquare className="size-4 shrink-0 text-neutral-400" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <Panel title="Agent">
+    <div className="fixed bottom-5 left-1/2 z-50 max-h-[min(720px,calc(100vh-40px))] w-[min(760px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-2xl shadow-black/15">
+      <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-neutral-900 text-white">
+            <Sparkles className="size-3.5" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-neutral-900">OpenCreative Agent</p>
+            <p className="truncate text-[11px] text-neutral-500">{projectName}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setOpen(false)}
+          title="Collapse agent"
+          className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="max-h-[calc(min(720px,100vh-40px)-57px)] overflow-y-auto p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
@@ -354,6 +393,7 @@ export function AIPanel({
           </div>
         </div>
       )}
-    </Panel>
+      </div>
+    </div>
   );
 }

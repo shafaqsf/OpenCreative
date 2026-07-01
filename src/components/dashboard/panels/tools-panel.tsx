@@ -30,8 +30,10 @@ import { Panel } from "./panel";
 import { useCanvas, uid } from "@/lib/canvas/context";
 import {
   getBuiltInTemplates,
+  instantiateTemplate,
   loadCustomTemplates,
   saveCustomTemplates,
+  snapshotTemplate,
   sortTemplates,
   type Template,
 } from "@/lib/canvas/presets";
@@ -62,22 +64,8 @@ const nodes: { id: ToolId; label: string; Icon: LucideIcon; desc: string }[] = [
   { id: "generate", label: "Generate", Icon: Sparkles, desc: "AI generation step" },
 ];
 
-function applyTemplate(template: Template, addElement: (el: import("@/types/canvas").CanvasElement) => void, addConnection: (fromId: string, toId: string) => void) {
-  const idMap = new Map<string, string>();
-  template.elements.forEach((el) => {
-    const newId = uid();
-    idMap.set(el.id, newId);
-    addElement({ ...el, id: newId });
-  });
-  template.connections.forEach((conn) => {
-    const fromId = idMap.get(conn.fromId) || conn.fromId;
-    const toId = idMap.get(conn.toId) || conn.toId;
-    addConnection(fromId, toId);
-  });
-}
-
 export function ToolsPanel() {
-  const { activeTool, setActiveTool, addElement, addConnection, elements, selectedIds, connections } = useCanvas();
+  const { activeTool, setActiveTool, addElement, addConnection, elements, selectedIds, connections, selectElements } = useCanvas();
   const { addToast } = useToast();
   const [custom, setCustom] = useState<Template[]>(() => loadCustomTemplates());
   const [saveOpen, setSaveOpen] = useState(false);
@@ -97,7 +85,7 @@ export function ToolsPanel() {
       addToast({ title: "No selection", message: "Select elements to save as a template.", variant: "warning" });
       return;
     }
-    const template: Template = {
+    const template = snapshotTemplate({
       id: uid(),
       name: templateName.trim(),
       description: `${selected.length} element${selected.length === 1 ? "" : "s"}`,
@@ -108,7 +96,7 @@ export function ToolsPanel() {
       pinned: false,
       archived: false,
       updatedAt: new Date().toISOString(),
-    };
+    });
     const next = [...custom, template];
     setCustom(next);
     saveCustomTemplates(next);
@@ -141,18 +129,31 @@ export function ToolsPanel() {
   }
 
   function duplicateTemplate(template: Template) {
-    const duplicate = {
+    const duplicate = snapshotTemplate({
       ...template,
       id: uid(),
       name: `${template.name} copy`,
       pinned: false,
       archived: false,
       updatedAt: new Date().toISOString(),
-    };
+    });
     const next = [...custom, duplicate];
     setCustom(next);
     saveCustomTemplates(next);
     addToast({ title: "Template duplicated", message: `"${duplicate.name}" saved.`, variant: "success" });
+  }
+
+  function applyTemplateToCanvas(template: Template) {
+    const instance = instantiateTemplate(template);
+    instance.elements.forEach(addElement);
+    instance.connections.forEach((conn) => addConnection(conn.fromId, conn.toId));
+    selectElements(instance.elements.map((el) => el.id));
+    addToast({
+      title: "Template applied",
+      message: `"${template.name}" added with ${instance.elements.length} item${instance.elements.length === 1 ? "" : "s"}.`,
+      variant: "success",
+      duration: 2000,
+    });
   }
 
   return (
@@ -230,10 +231,7 @@ export function ToolsPanel() {
             builtIn.map((template) => (
               <button
                 key={template.id}
-                onClick={() => {
-                  applyTemplate(template, addElement, addConnection);
-                  addToast({ title: "Template applied", message: `"${template.name}" added to canvas.`, variant: "success", duration: 2000 });
-                }}
+                onClick={() => applyTemplateToCanvas(template)}
                 className="flex items-center gap-2 rounded-md border border-transparent px-2.5 py-2 text-left text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >
                 <LayoutTemplate className="size-3.5" strokeWidth={1.75} />
@@ -254,10 +252,7 @@ export function ToolsPanel() {
               className="group flex items-center gap-1 rounded-md border border-transparent px-2.5 py-2 text-xs text-neutral-600 hover:bg-neutral-100"
             >
               <button
-                onClick={() => {
-                  applyTemplate(template, addElement, addConnection);
-                  addToast({ title: "Template applied", message: `"${template.name}" added to canvas.`, variant: "success", duration: 2000 });
-                }}
+                onClick={() => applyTemplateToCanvas(template)}
                 className="flex flex-1 items-center gap-2 text-left"
               >
                 {template.pinned ? (
