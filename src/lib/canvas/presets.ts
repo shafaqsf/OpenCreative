@@ -1,5 +1,6 @@
 import { uid, newNode } from "./context";
 import type { CanvasElement, Connection, NodeType } from "@/types/canvas";
+import { getBounds } from "./hit-test";
 
 export type Template = {
   id: string;
@@ -157,6 +158,18 @@ export function instantiateTemplate(
   return { elements, connections };
 }
 
+export function instantiateTemplateAt(
+  template: Template,
+  anchor: { x: number; y: number }
+): { elements: CanvasElement[]; connections: Connection[] } {
+  const bounds = getTemplateBounds(template);
+  const offset = {
+    x: anchor.x - bounds.minX - bounds.w / 2,
+    y: anchor.y - bounds.minY - bounds.h / 2,
+  };
+  return instantiateTemplate(template, offset);
+}
+
 export function snapshotTemplate(input: Template): Template {
   return normalizeTemplate({
     ...input,
@@ -190,4 +203,22 @@ function cloneElement(
         }
       : undefined,
   };
+}
+
+function getTemplateBounds(template: Template) {
+  if (template.elements.length === 0) {
+    return { minX: 0, minY: 0, w: 0, h: 0 };
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const el of template.elements) {
+    const bounds = getBounds(el);
+    minX = Math.min(minX, bounds.minX);
+    minY = Math.min(minY, bounds.minY);
+    maxX = Math.max(maxX, bounds.minX + bounds.w);
+    maxY = Math.max(maxY, bounds.minY + bounds.h);
+  }
+  return { minX, minY, w: maxX - minX, h: maxY - minY };
 }

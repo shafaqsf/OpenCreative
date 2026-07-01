@@ -11,6 +11,7 @@ import { Copy, Trash2, Layers, ArrowUp, ArrowDown, ClipboardPaste, MousePointer2
 import { useCanvas, newElement, newNode, uid } from "@/lib/canvas/context";
 import { screenToWorld, worldToScreen } from "@/lib/canvas/geometry";
 import { getElementAtPoint, getBounds } from "@/lib/canvas/hit-test";
+import { getBuiltInTemplates, instantiateTemplateAt, loadCustomTemplates } from "@/lib/canvas/presets";
 import { snapPointToGrid, computeAlignmentSnap, type Guide } from "@/lib/canvas/snap";
 import { useToast } from "@/lib/toast/context";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
@@ -356,11 +357,30 @@ export function Canvas() {
     (e: React.DragEvent<SVGSVGElement>) => {
       e.preventDefault();
       const toolId = e.dataTransfer.getData("application/opencreative-tool");
-      if (!toolId) return;
+      const templateId = e.dataTransfer.getData("application/opencreative-template");
+      if (!toolId && !templateId) return;
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
       const screenPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       const world = screenToWorld(screenPos, camera);
+
+      if (templateId) {
+        const templates = [...getBuiltInTemplates(), ...loadCustomTemplates()];
+        const template = templates.find((item) => item.id === templateId);
+        if (!template) return;
+        const instance = instantiateTemplateAt(template, world);
+        instance.elements.forEach(addElement);
+        instance.connections.forEach((conn) => addConnection(conn.fromId, conn.toId));
+        selectElements(instance.elements.map((el) => el.id));
+        setActiveTool("select");
+        addToast({
+          title: "Template placed",
+          message: `"${template.name}" added to the canvas.`,
+          variant: "success",
+          duration: 2000,
+        });
+        return;
+      }
 
       if (isNodeTool(toolId as NodeType)) {
         const el = newNode(toolId as NodeType, world.x - 90, world.y - 40);
@@ -385,7 +405,7 @@ export function Canvas() {
       }
       setActiveTool("select");
     },
-    [camera, addElement, selectElements, setActiveTool]
+    [camera, addElement, addConnection, selectElements, setActiveTool, addToast]
   );
 
   const cursor =

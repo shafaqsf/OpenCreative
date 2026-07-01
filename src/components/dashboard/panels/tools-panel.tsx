@@ -28,7 +28,7 @@ import { Panel } from "./panel";
 import { useCanvas, uid } from "@/lib/canvas/context";
 import {
   getBuiltInTemplates,
-  instantiateTemplate,
+  instantiateTemplateAt,
   loadCustomTemplates,
   saveCustomTemplates,
   snapshotTemplate,
@@ -139,7 +139,7 @@ export function ToolsPanel() {
   }
 
   function applyTemplateToCanvas(template: Template) {
-    const instance = instantiateTemplate(template);
+    const instance = instantiateTemplateAt(template, { x: 420, y: 240 });
     instance.elements.forEach(addElement);
     instance.connections.forEach((conn) => addConnection(conn.fromId, conn.toId));
     selectElements(instance.elements.map((el) => el.id));
@@ -149,6 +149,11 @@ export function ToolsPanel() {
       variant: "success",
       duration: 2000,
     });
+  }
+
+  function startTemplateDrag(e: React.DragEvent, template: Template) {
+    e.dataTransfer.setData("application/opencreative-template", template.id);
+    e.dataTransfer.effectAllowed = "copy";
   }
 
   return (
@@ -211,7 +216,10 @@ export function ToolsPanel() {
           {builtIn.map((template) => (
               <button
                 key={template.id}
+                draggable
+                onDragStart={(e) => startTemplateDrag(e, template)}
                 onClick={() => applyTemplateToCanvas(template)}
+                title="Drag onto the canvas or click to insert"
                 className="flex items-center gap-2 rounded-md border border-transparent px-2.5 py-2 text-left text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >
                 <LayoutTemplate className="size-3.5" strokeWidth={1.75} />
@@ -229,10 +237,13 @@ export function ToolsPanel() {
           {visibleCustom.map((template) => (
             <div
               key={template.id}
+              draggable
+              onDragStart={(e) => startTemplateDrag(e, template)}
               className="group flex items-center gap-1 rounded-md border border-transparent px-2.5 py-2 text-xs text-neutral-600 hover:bg-neutral-100"
             >
               <button
                 onClick={() => applyTemplateToCanvas(template)}
+                title="Drag onto the canvas or click to insert"
                 className="flex flex-1 items-center gap-2 text-left"
               >
                 {template.pinned ? (
