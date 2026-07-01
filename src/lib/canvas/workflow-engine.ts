@@ -123,21 +123,25 @@ export function prepareWorkflowRun(
       outputType: model.outputType,
       count: String(count),
     };
+  }
 
-    const connectedOutputs = nextConnections
-      .filter((conn) => conn.fromId === generate.id)
-      .map((conn) => nextElements.find((el) => el.id === conn.toId))
-      .filter(
-        (el): el is WorkflowNodeElement =>
-          isWorkflowNode(el) && el.nodeData.nodeType === "output"
-      );
+  for (const generate of nextElements) {
+    if (!isWorkflowNode(generate) || generate.nodeData.nodeType !== "generate") continue;
+
+    const model = getGenerationModel(generate.nodeData.properties.model);
+    const count = normalizeOutputCount(generate.nodeData.properties.count, model.id);
+
+    const existingOutputCount = nextConnections.filter(
+      (conn) => conn.fromId === generate.id &&
+        nextElements.some((el) => el.id === conn.toId && isWorkflowNode(el) && el.nodeData.nodeType === "output")
+    ).length;
 
     const fresh: string[] = [];
     for (let index = 0; index < count; index++) {
       const created = createNode(
         "output",
         generate.x + Math.max(generate.width, 200) + 64,
-        generate.y + (connectedOutputs.length + index) * 120
+        generate.y + (existingOutputCount + index) * 120
       );
       created.nodeData!.properties = {
         ...created.nodeData!.properties,

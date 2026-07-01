@@ -5,6 +5,7 @@ export async function runGeneration(params: {
   model: string;
   outputType: string;
   imageUrl?: string;
+  duration?: string;
 }): Promise<{ url?: string; error?: string }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return { error: "OPENROUTER_API_KEY not configured" };
@@ -17,13 +18,16 @@ export async function runGeneration(params: {
         text: [
           params.prompt,
           `Create a ${params.outputType} output.`,
+          params.duration && params.outputType === "video"
+            ? `Target duration: ${params.duration} seconds.`
+            : "",
         ]
           .filter(Boolean)
           .join("\n\n"),
       },
     ],
   };
-  if (params.imageUrl) {
+  if (params.imageUrl && isSupportedImageInput(params.imageUrl)) {
     messages.content.push({ type: "image_url", image_url: { url: params.imageUrl } });
   }
 
@@ -80,6 +84,10 @@ export async function runGeneration(params: {
     });
     return { error: message };
   }
+}
+
+function isSupportedImageInput(url: string) {
+  return /^https?:\/\//.test(url) || /^data:image\//.test(url);
 }
 
 function stringifyContent(content: unknown): string {

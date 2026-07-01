@@ -9,19 +9,11 @@ export type AgentMessage = {
   createdAt: string;
 };
 
-export type CanvasCheckpoint = {
-  id: string;
-  name: string;
-  workflow: WorkflowState;
-  createdAt: string;
-};
-
 export type AgentAppState = {
   projectName: string;
   workflow: WorkflowState;
   selectedIds: string[];
   activeTool: ToolId;
-  checkpoints: CanvasCheckpoint[];
 };
 
 export type AgentAction =
@@ -39,9 +31,7 @@ export type AgentAction =
   | { type: "select_tool"; tool: ToolId }
   | { type: "delete_selection" }
   | { type: "duplicate_selection" }
-  | { type: "rename_selection"; name: string }
-  | { type: "create_checkpoint"; name: string }
-  | { type: "restore_checkpoint"; checkpointId: string };
+  | { type: "rename_selection"; name: string };
 
 export type AgentResponse = {
   message: string;

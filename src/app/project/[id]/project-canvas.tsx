@@ -23,7 +23,6 @@ import {
   FileText,
   Image as ImageIcon,
   Sparkles,
-  Monitor,
   RotateCcw,
   Redo,
   Trash2,
@@ -243,6 +242,15 @@ function ProjectCanvasInner({
         outputIds.forEach((id) => setNodeState(id, { status: "running", error: undefined }));
         flushRunState();
 
+        if (input.mediaUrl && !selectedModel.supportsImageInput) {
+          const message = `The selected model (${selectedModel.label}) does not support image input. Connect a prompt-only workflow or switch to a model that accepts images.`;
+          setNodeState(generateId, { status: "error", error: message });
+          outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
+          flushRunState();
+          anyError = true;
+          continue;
+        }
+
         const results = await Promise.all(
           Array.from({ length: count }, async (_, index) => {
             const result = await runGeneration({
@@ -274,14 +282,6 @@ function ProjectCanvasInner({
           } else {
             lastError = result.error || "Generation failed";
             anyError = true;
-            console.error("OpenCreative workflow generation failed", {
-              projectId: project.id,
-              nodeId: generateId,
-              model: selectedModel.id,
-              outputType: selectedModel.outputType,
-              outputIndex: index,
-              error: lastError,
-            });
             if (outputId) {
               setNodeState(outputId, {
                 status: "error",
@@ -327,9 +327,9 @@ function ProjectCanvasInner({
       }
 
       if (anyError && anySaveError) {
-        addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning" });
+        addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anyError) {
-        addToast({ title: "Workflow finished with errors", message: "Generation errors were logged. Select failed output nodes for details.", variant: "warning" });
+        addToast({ title: "Workflow finished with errors", message: "Generation failed. Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anySaveError) {
         addToast({ title: "Workflow complete", message: "Outputs were created, but some gallery saves failed.", variant: "warning" });
       } else {
@@ -448,13 +448,6 @@ function ProjectCanvasInner({
         section: "Nodes",
         icon: <Sparkles className="size-3.5" />,
         onSelect: () => setActiveTool("generate"),
-      },
-      {
-        id: "node-output",
-        title: "Output node",
-        section: "Nodes",
-        icon: <Monitor className="size-3.5" />,
-        onSelect: () => setActiveTool("output"),
       },
       {
         id: "workflow-run",

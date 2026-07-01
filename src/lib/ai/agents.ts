@@ -7,13 +7,12 @@ You do not behave like a generic chatbot. You inspect the provided app state and
 
 Available concepts:
 - The canvas contains annotation elements and executable workflow nodes.
-- Workflow nodes are prompt, source, generate, and output.
+- Workflow nodes are prompt, source, and generate. Output nodes are created automatically when running a workflow.
 - Prompt text belongs in prompt node content. Do not put prompt text on generate node properties.
 - Generate nodes should contain model/output settings and should receive instructions through connected prompt nodes.
-- Users can create nodes, connect nodes, run workflows, select tools, rename/delete/duplicate selected items, and create or restore checkpoints.
+- Users can create nodes, connect nodes, run workflows, select tools, and rename/delete/duplicate selected items.
 - Prefer concrete actions over long explanations.
 - When creating a workflow, produce a clean left-to-right node graph.
-- Always create a checkpoint before destructive or large workspace-changing actions.
 - If the user asks a question only, answer without tool calls.
 - Keep the final message concise and describe what you did or what is needed next.`;
 
@@ -33,7 +32,7 @@ const tools = [
               type: "object",
               additionalProperties: false,
               properties: {
-                type: { type: "string", enum: ["prompt", "source", "generate", "output"] },
+                type: { type: "string", enum: ["prompt", "source", "generate"] },
                 x: { type: "number" },
                 y: { type: "number" },
                 properties: { type: "object", additionalProperties: { type: "string" } },
@@ -91,7 +90,6 @@ const tools = [
               "prompt",
               "source",
               "generate",
-              "output",
             ],
           },
         },
@@ -125,32 +123,6 @@ const tools = [
         additionalProperties: false,
         properties: { name: { type: "string" } },
         required: ["name"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "create_checkpoint",
-      description: "Create a named checkpoint of the current canvas state.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: { name: { type: "string" } },
-        required: ["name"],
-      },
-    },
-  },
-  {
-    type: "function" as const,
-    function: {
-      name: "restore_checkpoint",
-      description: "Restore a previous checkpoint by id.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: { checkpointId: { type: "string" } },
-        required: ["checkpointId"],
       },
     },
   },
@@ -204,10 +176,6 @@ export async function runOpenCreativeAgent({
           return [{ type: "duplicate_selection" as const }];
         case "rename_selection":
           return [{ type: "rename_selection" as const, name: args.name ?? "Untitled" }];
-        case "create_checkpoint":
-          return [{ type: "create_checkpoint" as const, name: args.name ?? "Checkpoint" }];
-        case "restore_checkpoint":
-          return [{ type: "restore_checkpoint" as const, checkpointId: args.checkpointId ?? "" }];
         default:
           return [];
       }
@@ -239,11 +207,6 @@ function summarizeAppState(appState: AgentAppState) {
     activeTool: appState.activeTool,
     elementCount: appState.workflow.elements.length,
     connectionCount: appState.workflow.connections.length,
-    checkpoints: appState.checkpoints.map((checkpoint) => ({
-      id: checkpoint.id,
-      name: checkpoint.name,
-      createdAt: checkpoint.createdAt,
-    })),
     nodes: appState.workflow.elements
       .filter((element) => element.nodeData)
       .map((element) => ({
@@ -265,7 +228,6 @@ export async function generateWorkflowFromPrompt(prompt: string) {
       workflow: { elements: [], connections: [], camera: { x: 0, y: 0, zoom: 1 } },
       selectedIds: [],
       activeTool: "select",
-      checkpoints: [],
     },
   });
   const create = response.actions.find((action) => action.type === "create_nodes");

@@ -64,10 +64,6 @@ function hydrateTemplates(): Template[] {
     model: imageModel.id,
     outputType: imageModel.outputType,
   });
-  const output1 = buildNode("output", 620, 120, {
-    outputIndex: "0",
-    outputType: imageModel.outputType,
-  });
 
   const source = buildNode("source", 80, 320, { fileType: "image" });
   const prompt2 = buildNode("prompt", 80, 500, {
@@ -75,10 +71,6 @@ function hydrateTemplates(): Template[] {
   });
   const generate2 = buildNode("generate", 360, 320, {
     model: videoModel.id,
-    outputType: videoModel.outputType,
-  });
-  const output2 = buildNode("output", 620, 320, {
-    outputIndex: "0",
     outputType: videoModel.outputType,
   });
 
@@ -90,28 +82,22 @@ function hydrateTemplates(): Template[] {
     outputType: imageModel.outputType,
     count: "4",
   });
-  const outputs3 = [0, 1, 2, 3].map((index) =>
-    buildNode("output", 620, 430 + index * 120, {
-      outputIndex: String(index),
-      outputType: imageModel.outputType,
-    })
-  );
 
   return [
     {
       ...BUILTIN_TEMPLATES[0],
-      elements: [prompt, generate1, output1],
-      connections: [wire(prompt, generate1), wire(generate1, output1)],
+      elements: [prompt, generate1],
+      connections: [wire(prompt, generate1)],
     },
     {
       ...BUILTIN_TEMPLATES[1],
-      elements: [source, prompt2, generate2, output2],
-      connections: [wire(source, generate2), wire(prompt2, generate2), wire(generate2, output2)],
+      elements: [source, prompt2, generate2],
+      connections: [wire(source, generate2), wire(prompt2, generate2)],
     },
     {
       ...BUILTIN_TEMPLATES[2],
-      elements: [prompt3, generate3, ...outputs3],
-      connections: [wire(prompt3, generate3), ...outputs3.map((output) => wire(generate3, output))],
+      elements: [prompt3, generate3],
+      connections: [wire(prompt3, generate3)],
     },
   ];
 }

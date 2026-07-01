@@ -29,6 +29,7 @@ import {
 import { useHistory } from "./use-history";
 import { cloneElements } from "./clone";
 import { getBounds } from "./hit-test";
+import { canConnectNodes } from "./workflow-engine";
 
 type CanvasContextValue = {
   elements: CanvasElement[];
@@ -46,6 +47,8 @@ type CanvasContextValue = {
   addElement: (el: CanvasElement) => void;
   addElements: (newElements: CanvasElement[], newConnections?: Connection[]) => void;
   updateElement: (id: string, patch: Partial<CanvasElement>) => void;
+  replaceWorkflowGraph: (elements: CanvasElement[], connections: Connection[]) => void;
+  commitWorkflowGraph: (elements: CanvasElement[], connections: Connection[]) => void;
   removeElements: (ids: string[]) => void;
   selectElements: (ids: string[]) => void;
   toggleSelection: (id: string) => void;
@@ -56,7 +59,7 @@ type CanvasContextValue = {
   replaceWorkflow: (state: WorkflowState) => void;
   bringToFront: (id: string) => void;
   sendToBack: (id: string) => void;
-  addConnection: (fromId: string, toId: string) => void;
+  addConnection: (fromId: string, toId: string) => boolean;
   removeConnection: (id: string) => void;
   updateNodeProperties: (id: string, properties: Record<string, string>) => void;
   updateNodeStatus: (
@@ -130,6 +133,7 @@ export function CanvasProvider({
   const {
     present,
     set: setHistory,
+    replace: replaceHistory,
     undo,
     redo,
     canUndo,
@@ -221,6 +225,26 @@ export function CanvasProvider({
     [setHistory]
   );
 
+  const replaceWorkflowGraph = useCallback(
+    (nextElements: CanvasElement[], nextConnections: Connection[]) => {
+      replaceHistory({
+        elements: nextElements,
+        connections: nextConnections,
+      });
+    },
+    [replaceHistory]
+  );
+
+  const commitWorkflowGraph = useCallback(
+    (nextElements: CanvasElement[], nextConnections: Connection[]) => {
+      setHistory({
+        elements: nextElements,
+        connections: nextConnections,
+      });
+    },
+    [setHistory]
+  );
+
   const removeElements = useCallback(
     (ids: string[]) => {
       const idSet = new Set(ids);
@@ -262,10 +286,11 @@ export function CanvasProvider({
 
   const moveElements = useCallback(
     (ids: string[], dx: number, dy: number) => {
+      const idSet = new Set(ids);
       setHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) => {
-          if (!ids.includes(el.id)) return el;
+          if (!idSet.has(el.id)) return el;
           if (el.points) {
             return {
               ...el,
@@ -490,6 +515,8 @@ export function CanvasProvider({
   const addConnection = useCallback(
     (fromId: string, toId: string) => {
       setHistory((prev) => {
+        const validation = canConnectNodes(prev.elements, prev.connections, fromId, toId);
+        if (!validation.ok) return prev;
         if (prev.connections.some((c) => c.fromId === fromId && c.toId === toId))
           return prev;
         return {
@@ -497,8 +524,9 @@ export function CanvasProvider({
           connections: [...prev.connections, { id: uid(), fromId, toId }],
         };
       });
+      return canConnectNodes(present.elements, present.connections, fromId, toId).ok;
     },
-    [setHistory]
+    [present.connections, present.elements, setHistory]
   );
 
   const removeConnection = useCallback(
@@ -527,7 +555,7 @@ export function CanvasProvider({
 
   const updateNodeStatus = useCallback(
     (id: string, status: NodeStatus, outputUrl?: string, error?: string, outputUrls?: string[]) => {
-      setHistory((prev) => ({
+      replaceHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) =>
           el.id === id && el.nodeData
@@ -545,7 +573,7 @@ export function CanvasProvider({
         ),
       }));
     },
-    [setHistory]
+    [replaceHistory]
   );
 
   const value = useMemo<CanvasContextValue>(
@@ -564,6 +592,8 @@ export function CanvasProvider({
       addElement,
       addElements,
       updateElement,
+      replaceWorkflowGraph,
+      commitWorkflowGraph,
       removeElements,
       selectElements,
       toggleSelection,
@@ -602,6 +632,8 @@ export function CanvasProvider({
       addElement,
       addElements,
       updateElement,
+      replaceWorkflowGraph,
+      commitWorkflowGraph,
       removeElements,
       selectElements,
       toggleSelection,

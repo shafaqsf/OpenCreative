@@ -5,14 +5,12 @@ import {
   Archive,
   ArchiveRestore,
   ChevronUp,
-  History,
   Loader2,
   MessageSquare,
   MoreHorizontal,
   Pencil,
   Pin,
   Plus,
-  RotateCcw,
   Send,
   Sparkles,
   Trash2,
@@ -20,7 +18,7 @@ import {
 } from "lucide-react";
 import { newNode, uid, useCanvas } from "@/lib/canvas/context";
 import { useToast } from "@/lib/toast/context";
-import type { AgentAction, AgentMessage, AgentResponse, CanvasCheckpoint } from "@/types/agent";
+import type { AgentAction, AgentMessage, AgentResponse } from "@/types/agent";
 import type { NodeType, ToolId, WorkflowState } from "@/types/canvas";
 
 type ChatState = {
@@ -31,7 +29,6 @@ type ChatState = {
   createdAt: string;
   updatedAt: string;
   messages: AgentMessage[];
-  checkpoints: CanvasCheckpoint[];
 };
 
 type AgentStore = {
@@ -49,7 +46,6 @@ function newChat(title = "New chat"): ChatState {
     createdAt: now,
     updatedAt: now,
     messages: [],
-    checkpoints: [],
   };
 }
 
@@ -75,7 +71,6 @@ export function AIPanel({
     removeElements,
     duplicateSelection,
     renameElement,
-    replaceWorkflow,
     runWorkflow,
     setActiveTool,
   } = useCanvas();
@@ -103,15 +98,22 @@ export function AIPanel({
         migrated.pinned = Boolean(parsed.pinned);
         migrated.archived = Boolean(parsed.archived);
         migrated.messages = parsed.messages;
-        migrated.checkpoints = parsed.checkpoints ?? [];
         setStore({ activeChatId: migrated.id, chats: [migrated] });
       }
     } catch {}
   }, [storageKey]);
 
   useEffect(() => {
-    window.localStorage.setItem(storageKey, JSON.stringify(store));
-  }, [storageKey, store]);
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(store));
+    } catch {
+      addToast({
+        title: "Storage limit reached",
+        message: "Chat history is too large. Archive or delete old chats to continue saving.",
+        variant: "warning",
+      });
+    }
+  }, [storageKey, store, addToast]);
 
   const workflow = useMemo<WorkflowState>(
     () => ({ elements, connections, camera }),
@@ -167,20 +169,6 @@ export function AIPanel({
     if (title) updateChat(chat.id, { title });
   }
 
-  function createCheckpoint(name: string) {
-    if (!activeChat) return null;
-    const checkpoint: CanvasCheckpoint = {
-      id: uid(),
-      name,
-      workflow,
-      createdAt: new Date().toISOString(),
-    };
-    updateChat(activeChat.id, {
-      checkpoints: [checkpoint, ...activeChat.checkpoints].slice(0, 20),
-    });
-    return checkpoint;
-  }
-
   async function executeAction(action: AgentAction) {
     switch (action.type) {
       case "create_nodes": {
@@ -213,7 +201,6 @@ export function AIPanel({
         return;
       case "delete_selection":
         if (selectedIds.length > 0) {
-          createCheckpoint("Before delete");
           removeElements(selectedIds);
         }
         return;
@@ -223,18 +210,6 @@ export function AIPanel({
       case "rename_selection":
         if (selectedIds.length === 1) renameElement(selectedIds[0], action.name);
         return;
-      case "create_checkpoint":
-        createCheckpoint(action.name);
-        addToast({ title: "Checkpoint saved", message: action.name, variant: "success" });
-        return;
-      case "restore_checkpoint": {
-        const checkpoint = activeChat?.checkpoints.find((item) => item.id === action.checkpointId);
-        if (checkpoint) {
-          createCheckpoint("Before restore");
-          replaceWorkflow(checkpoint.workflow);
-          addToast({ title: "Checkpoint restored", message: checkpoint.name, variant: "success" });
-        }
-      }
     }
   }
 
@@ -266,7 +241,6 @@ export function AIPanel({
             workflow,
             selectedIds,
             activeTool,
-            checkpoints: activeChat.checkpoints,
           },
         }),
       });
@@ -293,12 +267,6 @@ export function AIPanel({
     } finally {
       setLoading(false);
     }
-  }
-
-  function restoreCheckpoint(checkpoint: CanvasCheckpoint) {
-    createCheckpoint("Before restore");
-    replaceWorkflow(checkpoint.workflow);
-    addToast({ title: "Checkpoint restored", message: checkpoint.name, variant: "success" });
   }
 
   if (!activeChat) return null;
@@ -344,20 +312,6 @@ export function AIPanel({
               ))
             )}
           </div>
-          {activeChat.checkpoints.length > 0 && (
-            <div className="flex gap-1 overflow-x-auto border-t border-neutral-100 px-3 py-2">
-              {activeChat.checkpoints.slice(0, 6).map((checkpoint) => (
-                <button
-                  key={checkpoint.id}
-                  onClick={() => restoreCheckpoint(checkpoint)}
-                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1 text-[11px] text-neutral-600 hover:bg-neutral-100"
-                >
-                  <RotateCcw className="size-3" />
-                  {checkpoint.name}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
@@ -477,14 +431,6 @@ export function AIPanel({
           rows={1}
           className="max-h-28 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 disabled:text-neutral-400"
         />
-        <button
-          type="button"
-          onClick={() => createCheckpoint("Manual checkpoint")}
-          className="hidden size-10 shrink-0 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 sm:flex"
-          title="Save checkpoint"
-        >
-          <History className="size-5" />
-        </button>
         <button
           type="submit"
           disabled={loading || !prompt.trim() || activeChat.archived}

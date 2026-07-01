@@ -162,7 +162,7 @@ export function ToolsPanel() {
   return (
     <>
       <Panel title="Annotate">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="flex flex-col gap-1">
           {tools.map(({ id, label, Icon, shortcut }) => (
             <button
               key={id}
@@ -172,14 +172,17 @@ export function ToolsPanel() {
                 e.dataTransfer.effectAllowed = "copy";
               }}
               onClick={() => setActiveTool(id)}
-              title={`${label} — ${shortcut}`}
-              className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-xs transition-colors ${
+              className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
                 activeTool === id
                   ? "border-neutral-300 bg-neutral-100 text-neutral-900 shadow-inner"
                   : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
               }`}
             >
-              <Icon className="size-4" strokeWidth={1.75} />
+              <Icon className="size-3.5" strokeWidth={1.75} />
+              <div className="text-left leading-tight">
+                <div>{label}</div>
+                <div className="text-[10px] opacity-60">{shortcut}</div>
+              </div>
             </button>
           ))}
         </div>
