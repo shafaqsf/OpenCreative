@@ -8,7 +8,6 @@ export type Template = {
   elements: CanvasElement[];
   connections: Connection[];
   pinned?: boolean;
-  archived?: boolean;
   updatedAt?: string;
 };
 
@@ -125,7 +124,6 @@ export function normalizeTemplate(template: Template): Template {
     elements: Array.isArray(template.elements) ? template.elements : [],
     connections: Array.isArray(template.connections) ? template.connections : [],
     pinned: Boolean(template.pinned),
-    archived: Boolean(template.archived),
     updatedAt: template.updatedAt ?? new Date().toISOString(),
   };
 }

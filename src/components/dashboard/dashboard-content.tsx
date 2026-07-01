@@ -461,13 +461,15 @@ function ProjectCard({
       onKeyDown={(e) => {
         if (e.key === "Enter") router.push(`/project/${project.id}`);
       }}
-      className="group relative flex cursor-pointer flex-col rounded-xl border border-neutral-200 bg-white hover:border-neutral-900"
+      className="group relative flex cursor-pointer flex-col rounded-lg border border-neutral-200 bg-white hover:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
     >
-      <div className="relative aspect-video w-full overflow-hidden bg-neutral-50 p-2">
-        <ProjectThumbnail
-          workflow={project.workflow}
-          className="h-full w-full"
-        />
+      <div className="p-2">
+        <div className="aspect-video w-full overflow-hidden rounded-md bg-neutral-100">
+          <ProjectThumbnail
+            workflow={project.workflow}
+            className="h-full w-full"
+          />
+        </div>
       </div>
       <div className="p-3">
         <div className="mb-1 flex items-start justify-between">
@@ -523,9 +525,9 @@ function ProjectListItem({
       onKeyDown={(e) => {
         if (e.key === "Enter") router.push(`/project/${project.id}`);
       }}
-      className="group flex cursor-pointer items-center gap-4 rounded-xl border border-neutral-200 bg-white p-3 hover:border-neutral-900"
+      className="group flex cursor-pointer items-center gap-4 rounded-lg border border-neutral-200 bg-white p-3 hover:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10"
     >
-      <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-50">
+      <div className="size-16 shrink-0 overflow-hidden rounded-md bg-neutral-100">
         <ProjectThumbnail workflow={project.workflow} className="h-full w-full" />
       </div>
       <div className="flex-1 min-w-0">

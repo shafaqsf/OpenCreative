@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, Copy, Folder, Search, Grid3X3, List, Pencil, Pin, Trash2, FolderX } from "lucide-react";
+import { Copy, Folder, Search, Grid3X3, List, Pencil, Pin, Trash2, FolderX } from "lucide-react";
 import type { Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProjectThumbnail } from "./project-thumbnail";
@@ -15,7 +15,6 @@ export function FolderContent({
   projects,
   onCreateProject,
   onDeleteProject,
-  onArchiveProject,
   onDuplicateProject,
   onPinProject,
   onRenameProject,
@@ -26,7 +25,6 @@ export function FolderContent({
   projects: Project[];
   onCreateProject: (name: string) => void;
   onDeleteProject?: (id: string) => void;
-  onArchiveProject?: (id: string, archived: boolean) => void;
   onDuplicateProject?: (id: string) => void;
   onPinProject?: (id: string, pinned: boolean) => void;
   onRenameProject?: (id: string, name: string) => void;
@@ -36,12 +34,11 @@ export function FolderContent({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [view, setView] = useState<ViewMode>("grid");
-  const [showArchived, setShowArchived] = useState(false);
 
   const filteredProjects = useMemo(() => {
     let result = projects.filter((p) => {
       const archived = Boolean(p.config?.archived);
-      return archived === showArchived && p.name.toLowerCase().includes(query.toLowerCase());
+      return !archived && p.name.toLowerCase().includes(query.toLowerCase());
     });
     result.sort((a, b) => {
       const pinDelta = Number(Boolean(b.config?.pinned)) - Number(Boolean(a.config?.pinned));
@@ -54,7 +51,7 @@ export function FolderContent({
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
     return result;
-  }, [projects, query, sort, showArchived]);
+  }, [projects, query, sort]);
 
   function renameProject(project: Project) {
     const name = window.prompt("Rename project", project.name)?.trim();
@@ -83,17 +80,6 @@ export function FolderContent({
             <option value="created">Recently created</option>
             <option value="name">Name</option>
           </select>
-          <button
-            onClick={() => setShowArchived((value) => !value)}
-            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm outline-none transition-colors ${
-              showArchived
-                ? "border-neutral-900 bg-neutral-900 text-white"
-                : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
-            }`}
-          >
-            {showArchived ? <ArchiveRestore className="size-4" /> : <Archive className="size-4" />}
-            {showArchived ? "Archived" : "Active"}
-          </button>
           <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5">
             <button
               onClick={() => setView("grid")}
@@ -129,14 +115,16 @@ export function FolderContent({
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              className="group relative flex flex-col rounded-xl border border-neutral-200 bg-white hover:border-neutral-900"
+              className="group relative flex flex-col rounded-lg border border-neutral-200 bg-white hover:border-neutral-900"
             >
               <Link href={`/project/${project.id}`} className="block">
-                <div className="relative aspect-video w-full overflow-hidden bg-neutral-50 p-2">
-                  <ProjectThumbnail
-                    workflow={project.workflow}
-                    className="h-full w-full"
-                  />
+                <div className="p-2">
+                  <div className="aspect-video w-full overflow-hidden rounded-md bg-neutral-100">
+                    <ProjectThumbnail
+                      workflow={project.workflow}
+                      className="h-full w-full"
+                    />
+                  </div>
                 </div>
                 <div className="p-3 pr-24">
                   <p className="text-sm font-medium text-neutral-900 line-clamp-1">
@@ -183,15 +171,6 @@ export function FolderContent({
                     <Copy className="size-3.5" />
                   </button>
                 )}
-                {onArchiveProject && (
-                  <button
-                    onClick={() => onArchiveProject(project.id, !project.config?.archived)}
-                    className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
-                    title={project.config?.archived ? "Restore project" : "Archive project"}
-                  >
-                    {project.config?.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
-                  </button>
-                )}
                 {onDeleteProject && (
                   <button
                     onClick={() => onDeleteProject(project.id)}
@@ -210,10 +189,10 @@ export function FolderContent({
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              className="group flex items-center gap-4 rounded-xl border border-neutral-200 bg-white p-3 hover:border-neutral-900"
+              className="group flex items-center gap-4 rounded-lg border border-neutral-200 bg-white p-3 hover:border-neutral-900"
             >
               <Link href={`/project/${project.id}`} className="flex min-w-0 flex-1 items-center gap-4">
-                <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-neutral-50">
+                <div className="size-16 shrink-0 overflow-hidden rounded-md bg-neutral-100">
                   <ProjectThumbnail
                     workflow={project.workflow}
                     className="h-full w-full"
@@ -246,11 +225,6 @@ export function FolderContent({
                 {onDuplicateProject && !project.config?.archived && (
                   <button onClick={() => onDuplicateProject(project.id)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title="Duplicate project">
                     <Copy className="size-3.5" />
-                  </button>
-                )}
-                {onArchiveProject && (
-                  <button onClick={() => onArchiveProject(project.id, !project.config?.archived)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title={project.config?.archived ? "Restore project" : "Archive project"}>
-                    {project.config?.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
                   </button>
                 )}
                 {onDeleteProject && (

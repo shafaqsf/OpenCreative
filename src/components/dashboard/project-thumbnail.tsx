@@ -12,7 +12,7 @@ export function ProjectThumbnail({
   if (elements.length === 0) {
     return (
       <div
-        className={`flex items-center justify-center rounded-lg bg-neutral-100 ${className}`}
+        className={`flex items-center justify-center bg-neutral-100 ${className}`}
       >
         <span className="text-[10px] text-neutral-400">Empty canvas</span>
       </div>
@@ -41,7 +41,7 @@ export function ProjectThumbnail({
   return (
     <svg
       viewBox={`${minX} ${minY} ${w} ${h}`}
-      className={`rounded-lg border border-neutral-100 bg-neutral-100 ${className}`}
+      className={`bg-neutral-100 ${className}`}
       preserveAspectRatio="xMidYMid meet"
     >
       <rect x={minX} y={minY} width={w} height={h} fill="#f5f5f5" />

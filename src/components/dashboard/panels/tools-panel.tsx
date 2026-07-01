@@ -19,8 +19,6 @@ import {
   Plus,
   Save,
   Trash2,
-  Archive,
-  ArchiveRestore,
   Copy,
   Pencil,
   Pin,
@@ -70,12 +68,11 @@ export function ToolsPanel() {
   const [custom, setCustom] = useState<Template[]>(() => loadCustomTemplates());
   const [saveOpen, setSaveOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
 
   const builtIn = useMemo(() => getBuiltInTemplates(), []);
   const visibleCustom = useMemo(
-    () => sortTemplates(custom.filter((template) => Boolean(template.archived) === showArchived)),
-    [custom, showArchived]
+    () => sortTemplates(custom),
+    [custom]
   );
 
   function handleSave() {
@@ -94,7 +91,6 @@ export function ToolsPanel() {
         selectedIds.includes(conn.fromId) && selectedIds.includes(conn.toId)
       ),
       pinned: false,
-      archived: false,
       updatedAt: new Date().toISOString(),
     });
     const next = [...custom, template];
@@ -134,7 +130,6 @@ export function ToolsPanel() {
       id: uid(),
       name: `${template.name} copy`,
       pinned: false,
-      archived: false,
       updatedAt: new Date().toISOString(),
     });
     const next = [...custom, duplicate];
@@ -212,23 +207,8 @@ export function ToolsPanel() {
         </p>
       </Panel>
       <Panel title="Templates" defaultOpen={false}>
-        <div className="mb-2 flex items-center gap-1 rounded-md border border-neutral-200 bg-white p-0.5">
-          <button
-            onClick={() => setShowArchived(false)}
-            className={`flex-1 rounded px-2 py-1 text-[11px] ${!showArchived ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"}`}
-          >
-            Active
-          </button>
-          <button
-            onClick={() => setShowArchived(true)}
-            className={`flex-1 rounded px-2 py-1 text-[11px] ${showArchived ? "bg-neutral-900 text-white" : "text-neutral-500 hover:bg-neutral-100"}`}
-          >
-            Archived
-          </button>
-        </div>
         <div className="flex flex-col gap-1">
-          {!showArchived &&
-            builtIn.map((template) => (
+          {builtIn.map((template) => (
               <button
                 key={template.id}
                 onClick={() => applyTemplateToCanvas(template)}
@@ -243,7 +223,7 @@ export function ToolsPanel() {
             ))}
           {visibleCustom.length === 0 && (
             <div className="rounded-md border border-dashed border-neutral-200 px-3 py-5 text-center text-[11px] text-neutral-400">
-              {showArchived ? "No archived templates." : "No custom templates yet."}
+              No custom templates yet.
             </div>
           )}
           {visibleCustom.map((template) => (
@@ -285,13 +265,6 @@ export function ToolsPanel() {
                 title="Duplicate template"
               >
                 <Copy className="size-3" />
-              </button>
-              <button
-                onClick={() => updateTemplate(template.id, { archived: !template.archived, pinned: false })}
-                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
-                title={template.archived ? "Restore template" : "Archive template"}
-              >
-                {template.archived ? <ArchiveRestore className="size-3" /> : <Archive className="size-3" />}
               </button>
               <button
                 onClick={() => deleteTemplate(template.id)}

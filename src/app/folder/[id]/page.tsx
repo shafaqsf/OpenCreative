@@ -28,15 +28,6 @@ export default async function FolderPage({
     revalidatePath(`/folder/${id}`);
   }
 
-  async function handleArchiveProject(projectId: string, archived: boolean) {
-    "use server";
-    await updateProjectConfig(projectId, {
-      archived,
-      archived_at: archived ? new Date().toISOString() : null,
-    });
-    revalidatePath(`/folder/${id}`);
-  }
-
   async function handleDuplicateProject(projectId: string) {
     "use server";
     await duplicateProject(projectId);
@@ -80,7 +71,6 @@ export default async function FolderPage({
         projects={projects}
         onCreateProject={handleCreate}
         onDeleteProject={handleDeleteProject}
-        onArchiveProject={handleArchiveProject}
         onDuplicateProject={handleDuplicateProject}
         onPinProject={handlePinProject}
         onRenameProject={handleRenameProject}
