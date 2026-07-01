@@ -107,22 +107,39 @@ function ProjectCanvasInner({
           const sourceUrl = inputIds
             .map((i) => getNode(i)?.nodeData?.outputUrl)
             .find(Boolean);
+          const count = parseInt(node.nodeData.properties.count || "1", 10);
+          const allUrls: string[] = [];
+          let lastError: string | undefined;
 
-          const result = await runGeneration({
-            prompt: node.nodeData.properties.prompt || "",
-            model: node.nodeData.properties.model || "kwaivgi/kling-v3.0-pro",
-            imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
-          });
+          for (let i = 0; i < count; i++) {
+            const result = await runGeneration({
+              prompt: node.nodeData.properties.prompt || "",
+              model: node.nodeData.properties.model || "kwaivgi/kling-v3.0-pro",
+              imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
+            });
+            if (result.url) {
+              allUrls.push(result.url);
+            } else {
+              lastError = result.error || "Generation failed";
+              break;
+            }
+          }
 
-          if (result.url) {
-            updateNodeStatus(id, "done", result.url);
+          if (allUrls.length > 0) {
+            updateNodeStatus(id, "done", allUrls[0], undefined, allUrls);
           } else {
-            updateNodeStatus(
-              id,
-              "error",
-              undefined,
-              result.error || "Generation failed"
-            );
+            updateNodeStatus(id, "error", undefined, lastError || "Generation failed");
+          }
+        } else if (node.type === "output") {
+          const inputIds = getInputs(id);
+          const genNode = inputIds.length > 0 ? getNode(inputIds[0]) : null;
+          const genUrls = genNode?.nodeData?.outputUrls;
+          const index = parseInt(node.nodeData.properties.outputIndex || "0", 10);
+
+          if (genUrls && genUrls.length > index) {
+            updateNodeStatus(id, "done", genUrls[index]);
+          } else {
+            updateNodeStatus(id, "error", undefined, "No output at this index");
           }
         } else {
           updateNodeStatus(id, "done", node.nodeData.outputUrl);
@@ -133,8 +150,8 @@ function ProjectCanvasInner({
         const outs = getOutputs(id);
         for (const outId of outs) {
           if (!done.has(outId)) {
-            const inputIds = getInputs(outId);
-            if (inputIds.every((i) => done.has(i))) {
+            const inputs = getInputs(outId);
+            if (inputs.every((i) => done.has(i))) {
               queue.push(outId);
             }
           }

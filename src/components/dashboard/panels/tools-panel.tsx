@@ -14,6 +14,7 @@ import {
   FileText,
   Image,
   Sparkles,
+  SquareArrowOutUpRight,
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
@@ -39,9 +40,10 @@ const tools: {
 ];
 
 const nodes: { id: ToolId; label: string; Icon: LucideIcon; desc: string }[] = [
-  { id: "script", label: "Script", Icon: FileText, desc: "Write ad copy or text input" },
-  { id: "source", label: "Source", Icon: Image, desc: "Paste or link to a media file" },
+  { id: "prompt", label: "Prompt", Icon: FileText, desc: "Text prompt or instruction" },
+  { id: "source", label: "Source", Icon: Image, desc: "Image/video URL or upload" },
   { id: "generate", label: "Generate", Icon: Sparkles, desc: "AI generation step" },
+  { id: "output", label: "Output", Icon: SquareArrowOutUpRight, desc: "Preview & download a result" },
 ];
 
 export function ToolsPanel() {

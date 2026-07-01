@@ -5,9 +5,10 @@ import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 
 const NODE_COLORS: Record<NodeType, string> = {
-  script: "#f5f5f4",
+  prompt: "#f5f5f4",
   source: "#f5f5f4",
   generate: "#ffffff",
+  output: "#171717",
 };
 
 export function Shape({ element }: { element: CanvasElement }) {
@@ -121,9 +122,14 @@ function WorkflowNode({
   nodeData: NodeData;
 }) {
   const { minX, minY, w, h } = getBounds(element);
-  const { nodeType, label, status, outputUrl, error } = nodeData;
+  const { nodeType, label, status, outputUrl, outputUrls, error } = nodeData;
+  const isDark = NODE_COLORS[nodeType] === "#171717";
+  const textColor = isDark ? "#ffffff" : "#171717";
   const strokeColor =
     status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : element.stroke;
+
+  const outputIndex = parseInt(nodeData.properties.outputIndex || "0", 10);
+  const displayUrl = outputUrl || (outputUrls?.length ? outputUrls[outputIndex] : undefined);
 
   return (
     <g>
@@ -147,7 +153,7 @@ function WorkflowNode({
             flexDirection: "column",
             fontSize: 11,
             fontFamily: "ui-sans-serif, system-ui, sans-serif",
-            color: "#171717",
+            color: textColor,
             overflow: "hidden",
           }}
         >
@@ -162,7 +168,9 @@ function WorkflowNode({
               opacity: 0.7,
             }}
           >
-            {label}
+            {nodeType === "output" && outputUrls && outputUrls.length > 1
+              ? `${label} #${(parseInt(nodeData.properties.outputIndex || "0", 10) + 1)}`
+              : label}
           </div>
 
           {status === "running" && (
@@ -199,7 +207,7 @@ function WorkflowNode({
             </div>
           )}
 
-          {status === "done" && outputUrl && (
+          {status === "done" && displayUrl && (
             <div
               style={{
                 flex: 1,
@@ -210,7 +218,7 @@ function WorkflowNode({
               }}
             >
               <img
-                src={outputUrl}
+                src={displayUrl}
                 alt=""
                 style={{
                   maxWidth: "100%",
@@ -222,7 +230,7 @@ function WorkflowNode({
             </div>
           )}
 
-          {status === "done" && !outputUrl && (
+          {(status === "idle" || (status === "done" && !displayUrl)) && (
             <div
               style={{
                 flex: 1,
@@ -233,28 +241,17 @@ function WorkflowNode({
                 opacity: 0.4,
               }}
             >
-              Done
-            </div>
-          )}
-
-          {status === "idle" && (
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 10,
-                opacity: 0.4,
-              }}
-            >
-              {nodeType === "generate" ? "Set prompt and run" : "Ready"}
+              {nodeType === "generate"
+                ? "Set prompt and run"
+                : nodeType === "output"
+                  ? "Waiting for generation"
+                  : "Ready"}
             </div>
           )}
         </div>
       </foreignObject>
 
-      <g stroke="#171717" strokeWidth={2}>
+      <g stroke={isDark ? "#ffffff" : "#171717"} strokeWidth={2}>
         <circle
           cx={minX}
           cy={minY + h / 2}

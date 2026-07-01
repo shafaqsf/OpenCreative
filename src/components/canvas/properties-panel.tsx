@@ -1,14 +1,15 @@
 "use client";
 
+import { useRef } from "react";
 import { useCanvas } from "@/lib/canvas/context";
-import type { NodeData } from "@/types/canvas";
 
-const NODE_CONFIG: Record<string, { label: string; fields: { key: string; label: string; type: string; placeholder?: string; options?: { value: string; label: string }[] }[] }> = {
-  script: {
-    label: "Script",
-    fields: [
-      { key: "content", label: "Content", type: "textarea", placeholder: "Write your script…" },
-    ],
+const NODE_CONFIG: Record<
+  string,
+  { label: string; fields: { key: string; label: string; type: string; placeholder?: string; options?: { value: string; label: string }[] }[] }
+> = {
+  prompt: {
+    label: "Prompt",
+    fields: [{ key: "content", label: "Content", type: "textarea", placeholder: "Write your prompt…" }],
   },
   source: {
     label: "Source",
@@ -42,6 +43,13 @@ const NODE_CONFIG: Record<string, { label: string; fields: { key: string; label:
         ],
       },
       { key: "duration", label: "Duration (s)", type: "number" },
+      { key: "count", label: "Outputs", type: "number" },
+    ],
+  },
+  output: {
+    label: "Output",
+    fields: [
+      { key: "outputIndex", label: "Output index", type: "number" },
     ],
   },
 };
@@ -54,7 +62,9 @@ export function PropertiesPanel() {
     removeElements,
     removeConnection,
     updateNodeProperties,
+    updateNodeStatus,
   } = useCanvas();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedEl = elements.find((el) => selectedIds.includes(el.id));
   const nodeData = selectedEl?.nodeData;
@@ -68,18 +78,26 @@ export function PropertiesPanel() {
   }
 
   const el = selectedEl;
-  const nd: NodeData = nodeData;
-  const cfg = NODE_CONFIG[nd.nodeType as keyof typeof NODE_CONFIG] ?? { label: "Node", fields: [] };
+  const nd = nodeData;
+  const cfg = NODE_CONFIG[nd.nodeType] ?? { label: "Node", fields: [] };
   const inputConns = connections.filter((c) => c.toId === el.id);
-  const inputNodes = elements.filter((other) =>
-    inputConns.some((c) => c.fromId === other.id)
-  );
 
   function setField(key: string, value: string) {
-    updateNodeProperties(el.id, {
-      ...nd.properties,
-      [key]: value,
-    });
+    updateNodeProperties(el.id, { ...nd.properties, [key]: value });
+  }
+
+  async function handleUpload(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const json = await res.json();
+      if (json.url) {
+        setField("url", json.url);
+      }
+    } catch {
+      // fallback: keep current URL
+    }
   }
 
   return (
@@ -91,20 +109,23 @@ export function PropertiesPanel() {
         </p>
       </div>
 
-      {inputNodes.length > 0 && (
+      {inputConns.length > 0 && (
         <div>
           <span className="mb-1 block font-medium text-neutral-600">
             Connected from
           </span>
           <div className="flex flex-wrap gap-1">
-            {inputNodes.map((n) => (
-              <span
-                key={n.id}
-                className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600"
-              >
-                {n.nodeData?.label || n.id.slice(0, 6)}
-              </span>
-            ))}
+            {inputConns.map((c) => {
+              const n = elements.find((e) => e.id === c.fromId);
+              return (
+                <span
+                  key={c.id}
+                  className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600"
+                >
+                  {n?.nodeData?.label || c.fromId.slice(0, 6)}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
@@ -153,35 +174,65 @@ export function PropertiesPanel() {
         </label>
       ))}
 
-      {nd.status === "done" && nd.outputUrl && (
+      {nd.nodeType === "source" && (
         <div>
           <span className="mb-1 block font-medium text-neutral-600">
-            Output
+            Upload
           </span>
-          <div className="flex flex-col gap-2">
-            {nd.properties.fileType !== "video" && (
-              <img
-                src={nd.outputUrl}
-                alt=""
-                className="max-h-32 w-full rounded border border-neutral-200 object-cover"
-              />
-            )}
-            <a
-              href={nd.outputUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="block break-all rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-[10px] text-blue-600 underline hover:bg-neutral-100"
-            >
-              Open original
-            </a>
-            <a
-              href={nd.outputUrl}
-              download
-              className="rounded-md bg-neutral-900 px-2 py-1.5 text-center text-[10px] text-white hover:bg-neutral-800"
-            >
-              Download
-            </a>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleUpload(file);
+            }}
+            className="w-full text-xs file:mr-2 file:rounded file:border-0 file:bg-neutral-900 file:px-2 file:py-1 file:text-[10px] file:text-white hover:file:bg-neutral-800"
+          />
+        </div>
+      )}
+
+      {nd.outputUrls && nd.outputUrls.length > 0 && (
+        <div>
+          <span className="mb-1 block font-medium text-neutral-600">
+            Outputs ({nd.outputUrls.length})
+          </span>
+          <div className="flex flex-col gap-1">
+            {nd.outputUrls.map((url, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="w-4 text-[10px] text-neutral-400">{i + 1}</span>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 truncate rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-[10px] text-blue-600 underline"
+                >
+                  {url.slice(0, 40)}…
+                </a>
+                <a
+                  href={url}
+                  download
+                  className="shrink-0 rounded bg-neutral-900 px-2 py-1 text-[10px] text-white hover:bg-neutral-800"
+                >
+                  DL
+                </a>
+              </div>
+            ))}
           </div>
+        </div>
+      )}
+
+      {nd.outputUrl && !nd.outputUrls && (
+        <div>
+          <span className="mb-1 block font-medium text-neutral-600">Output</span>
+          <a
+            href={nd.outputUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block break-all rounded border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-[10px] text-blue-600 underline hover:bg-neutral-100"
+          >
+            {nd.outputUrl}
+          </a>
         </div>
       )}
 

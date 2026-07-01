@@ -52,7 +52,8 @@ type CanvasContextValue = {
     id: string,
     status: NodeStatus,
     outputUrl?: string,
-    error?: string
+    error?: string,
+    outputUrls?: string[]
   ) => void;
 };
 
@@ -227,11 +228,20 @@ export function CanvasProvider({
   );
 
   const updateNodeStatus = useCallback(
-    (id: string, status: NodeStatus, outputUrl?: string, error?: string) => {
+    (id: string, status: NodeStatus, outputUrl?: string, error?: string, outputUrls?: string[]) => {
       setElements((prev) =>
         prev.map((el) =>
           el.id === id && el.nodeData
-            ? { ...el, nodeData: { ...el.nodeData, status, outputUrl, error } }
+            ? {
+                ...el,
+                nodeData: {
+                  ...el.nodeData,
+                  status,
+                  outputUrl,
+                  error,
+                  ...(outputUrls !== undefined ? { outputUrls } : {}),
+                },
+              }
             : el
         )
       );
