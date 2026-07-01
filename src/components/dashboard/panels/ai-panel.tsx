@@ -91,6 +91,8 @@ export function AIPanel({
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.chats) && parsed.chats.length > 0) {
         setStore(parsed);
+        const active = parsed.chats.find((c: ChatState) => c.id === parsed.activeChatId) ?? parsed.chats[0];
+        if (active.messages.length > 0) setTranscriptOpen(true);
         return;
       }
       if (Array.isArray(parsed.messages)) {
@@ -99,6 +101,7 @@ export function AIPanel({
         migrated.archived = Boolean(parsed.archived);
         migrated.messages = parsed.messages;
         setStore({ activeChatId: migrated.id, chats: [migrated] });
+        if (migrated.messages.length > 0) setTranscriptOpen(true);
       }
     } catch {}
   }, [storageKey]);
