@@ -21,7 +21,7 @@ import {
   Diamond,
   Star,
   FileText,
-  Image,
+  Image as ImageIcon,
   Sparkles,
   Monitor,
   RotateCcw,
@@ -212,7 +212,7 @@ function ProjectCanvasInner({
       id: "node-source",
       title: "Source node",
       section: "Nodes",
-      icon: <Image className="size-3.5" />,
+      icon: <ImageIcon className="size-3.5" />,
       onSelect: () => setActiveTool("source"),
     },
     {

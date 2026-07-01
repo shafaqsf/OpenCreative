@@ -4,7 +4,6 @@ import { FolderPlus } from "lucide-react";
 import { listFolders, listProjects, createFolder, createProject } from "@/lib/projects/service";
 import { CreateFolderDialog } from "@/components/dashboard/create-folder-dialog";
 import { DashboardContent } from "@/components/dashboard/dashboard-content";
-import { DashboardCommands } from "@/components/dashboard/dashboard-commands";
 
 export default async function DashboardPage() {
   const folders = await listFolders();
@@ -24,7 +23,6 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <DashboardCommands folders={folders} projects={allProjects} />
       <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-white text-neutral-900">
         <header className="flex items-center justify-between border-b border-neutral-200 px-6 py-3.5">
           <div className="flex items-center gap-2.5">

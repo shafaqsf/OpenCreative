@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { Folder as FolderType, Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
+import { DashboardCommands } from "./dashboard-commands";
 import { PinButton, usePinnedProjects } from "./project-pins";
 import { ProjectThumbnail } from "./project-thumbnail";
 
@@ -64,7 +65,9 @@ export function DashboardContent({
   );
 
   return (
-    <main className="flex-1 overflow-y-auto p-6">
+    <>
+      <DashboardCommands folders={folders} projects={allProjects} />
+      <main className="flex-1 overflow-y-auto p-6">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-neutral-400" />
@@ -187,6 +190,7 @@ export function DashboardContent({
         )}
       </section>
     </main>
+    </>
   );
 }
 

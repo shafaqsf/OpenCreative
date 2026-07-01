@@ -218,7 +218,7 @@ export function Canvas() {
       addElement(el);
       setDrag({ kind: "create", start: world, el });
     },
-    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, addElement, toggleSelection, selectElements, clearSelection, addConnection]
+    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, snapWorld, addElement, toggleSelection, selectElements, clearSelection]
   );
 
   const onPointerMove = useCallback(
@@ -278,7 +278,7 @@ export function Canvas() {
         return;
       }
     },
-    [drag, marquee, connectEnd, getMousePos, getWorldPos, setCamera, updateElement, moveElements]
+    [drag, marquee, connectEnd, getMousePos, getWorldPos, snapWorld, computeMoveSnap, setCamera, updateElement, moveElements]
   );
 
   const onPointerUp = useCallback(() => {

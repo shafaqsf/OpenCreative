@@ -112,7 +112,14 @@ export function CanvasProvider({
   onChange?: (state: WorkflowState) => void;
 }) {
   const initialState = initial ?? loadFromStorage();
-  const history = useHistory(
+  const {
+    present,
+    set: setHistory,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useHistory(
     {
       elements: initialState.elements,
       connections: initialState.connections,
@@ -130,8 +137,8 @@ export function CanvasProvider({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  const elements = history.present.elements;
-  const connections = history.present.connections;
+  const elements = present.elements;
+  const connections = present.connections;
 
   useEffect(() => {
     setMounted(true);
@@ -149,30 +156,30 @@ export function CanvasProvider({
 
   const addElement = useCallback(
     (el: CanvasElement) => {
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         elements: [...prev.elements, el],
       }));
     },
-    [history.set]
+    [setHistory]
   );
 
   const updateElement = useCallback(
     (id: string, patch: Partial<CanvasElement>) => {
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) =>
           el.id === id ? { ...el, ...patch } : el
         ),
       }));
     },
-    [history.set]
+    [setHistory]
   );
 
   const removeElements = useCallback(
     (ids: string[]) => {
       const idSet = new Set(ids);
-      history.set((prev) => ({
+      setHistory((prev) => ({
         elements: prev.elements.filter((el) => !idSet.has(el.id)),
         connections: prev.connections.filter(
           (c) => !idSet.has(c.fromId) && !idSet.has(c.toId)
@@ -180,7 +187,7 @@ export function CanvasProvider({
       }));
       setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
     },
-    [history.set]
+    [setHistory]
   );
 
   const selectElements = useCallback(
@@ -198,19 +205,19 @@ export function CanvasProvider({
 
   const renameElement = useCallback(
     (id: string, label: string) => {
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) =>
           el.id === id ? { ...el, customLabel: label } : el
         ),
       }));
     },
-    [history.set]
+    [setHistory]
   );
 
   const moveElements = useCallback(
     (ids: string[], dx: number, dy: number) => {
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) => {
           if (!ids.includes(el.id)) return el;
@@ -224,7 +231,7 @@ export function CanvasProvider({
         }),
       }));
     },
-    [history.set]
+    [setHistory]
   );
 
   const setCamera = useCallback(
@@ -244,7 +251,7 @@ export function CanvasProvider({
 
   const bringToFront = useCallback(
     (id: string) => {
-      history.set((prev) => {
+      setHistory((prev) => {
         const idx = prev.elements.findIndex((el) => el.id === id);
         if (idx === -1) return prev;
         const next = [...prev.elements];
@@ -253,12 +260,12 @@ export function CanvasProvider({
         return { ...prev, elements: next };
       });
     },
-    [history.set]
+    [setHistory]
   );
 
   const sendToBack = useCallback(
     (id: string) => {
-      history.set((prev) => {
+      setHistory((prev) => {
         const idx = prev.elements.findIndex((el) => el.id === id);
         if (idx === -1) return prev;
         const next = [...prev.elements];
@@ -267,35 +274,35 @@ export function CanvasProvider({
         return { ...prev, elements: next };
       });
     },
-    [history.set]
+    [setHistory]
   );
 
   const copyToClipboard = useCallback(
     (ids: string[]) => {
-      const items = history.present.elements.filter((el) => ids.includes(el.id));
+      const items = present.elements.filter((el) => ids.includes(el.id));
       setClipboard(cloneElements(items, 0, 0));
     },
-    [history.present.elements]
+    [present.elements]
   );
 
   const duplicateSelection = useCallback(() => {
     if (selectedIds.length === 0) return;
     const clones = cloneElements(
-      history.present.elements.filter((el) => selectedIds.includes(el.id)),
+      present.elements.filter((el) => selectedIds.includes(el.id)),
       20,
       20
     );
     clones.forEach((el) => addElement(el));
     selectElements(clones.map((el) => el.id));
-  }, [history.present.elements, selectedIds, addElement, selectElements]);
+  }, [present.elements, selectedIds, addElement, selectElements]);
 
   const selectAll = useCallback(() => {
-    selectElements(history.present.elements.map((el) => el.id));
-  }, [history.present.elements, selectElements]);
+    selectElements(present.elements.map((el) => el.id));
+  }, [present.elements, selectElements]);
 
   const alignSelection = useCallback(
     (alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom") => {
-      const selected = history.present.elements.filter((el) =>
+      const selected = present.elements.filter((el) =>
         selectedIds.includes(el.id)
       );
       if (selected.length < 2) return;
@@ -325,7 +332,7 @@ export function CanvasProvider({
           target = Math.max(...bounds.map((b) => b.minY + b.h));
           break;
       }
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) => {
           if (!selectedIds.includes(el.id)) return el;
@@ -362,12 +369,12 @@ export function CanvasProvider({
         }),
       }));
     },
-    [history.present.elements, selectedIds, history.set]
+    [present.elements, selectedIds, setHistory]
   );
 
   const distributeSelection = useCallback(
     (axis: "horizontal" | "vertical") => {
-      const selected = history.present.elements.filter((el) =>
+      const selected = present.elements.filter((el) =>
         selectedIds.includes(el.id)
       );
       if (selected.length < 3) return;
@@ -378,7 +385,7 @@ export function CanvasProvider({
           withBounds[withBounds.length - 1].b.minX -
           withBounds[0].b.minX;
         const step = totalSpace / (withBounds.length - 1);
-        history.set((prev) => ({
+        setHistory((prev) => ({
           ...prev,
           elements: prev.elements.map((el) => {
             const idx = withBounds.findIndex((item) => item.el.id === el.id);
@@ -400,7 +407,7 @@ export function CanvasProvider({
           withBounds[withBounds.length - 1].b.minY -
           withBounds[0].b.minY;
         const step = totalSpace / (withBounds.length - 1);
-        history.set((prev) => ({
+        setHistory((prev) => ({
           ...prev,
           elements: prev.elements.map((el) => {
             const idx = withBounds.findIndex((item) => item.el.id === el.id);
@@ -418,12 +425,12 @@ export function CanvasProvider({
         }));
       }
     },
-    [history.present.elements, selectedIds, history.set]
+    [present.elements, selectedIds, setHistory]
   );
 
   const addConnection = useCallback(
     (fromId: string, toId: string) => {
-      history.set((prev) => {
+      setHistory((prev) => {
         if (prev.connections.some((c) => c.fromId === fromId && c.toId === toId))
           return prev;
         return {
@@ -432,22 +439,22 @@ export function CanvasProvider({
         };
       });
     },
-    [history.set]
+    [setHistory]
   );
 
   const removeConnection = useCallback(
     (id: string) => {
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         connections: prev.connections.filter((c) => c.id !== id),
       }));
     },
-    [history.set]
+    [setHistory]
   );
 
   const updateNodeProperties = useCallback(
     (id: string, properties: Record<string, string>) => {
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) =>
           el.id === id && el.nodeData
@@ -456,12 +463,12 @@ export function CanvasProvider({
         ),
       }));
     },
-    [history.set]
+    [setHistory]
   );
 
   const updateNodeStatus = useCallback(
     (id: string, status: NodeStatus, outputUrl?: string, error?: string, outputUrls?: string[]) => {
-      history.set((prev) => ({
+      setHistory((prev) => ({
         ...prev,
         elements: prev.elements.map((el) =>
           el.id === id && el.nodeData
@@ -479,7 +486,7 @@ export function CanvasProvider({
         ),
       }));
     },
-    [history.set]
+    [setHistory]
   );
 
   const value = useMemo<CanvasContextValue>(
@@ -515,10 +522,10 @@ export function CanvasProvider({
       selectAll,
       alignSelection,
       distributeSelection,
-      undo: history.undo,
-      redo: history.redo,
-      canUndo: history.canUndo,
-      canRedo: history.canRedo,
+      undo: undo,
+      redo: redo,
+      canUndo: canUndo,
+      canRedo: canRedo,
     }),
     [
       elements,
@@ -551,10 +558,10 @@ export function CanvasProvider({
       distributeSelection,
       toggleSnapToGrid,
       toggleShowGrid,
-      history.undo,
-      history.redo,
-      history.canUndo,
-      history.canRedo,
+      undo,
+      redo,
+      canUndo,
+      canRedo,
     ]
   );
 
