@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Eye } from "lucide-react";
 import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
@@ -621,6 +621,25 @@ function OutputNodeControls({
           </button>
         )}
       </div>
+      <button
+        onClick={() => window.open(url, "_blank")}
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          padding: "2px 6px",
+          borderRadius: 4,
+          border: "1px solid #e5e5e5",
+          background: "#fff",
+          color: "#525252",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+        }}
+        title="Preview"
+      >
+        <Eye size={10} />
+      </button>
       <a
         href={url}
         download={fileName}
