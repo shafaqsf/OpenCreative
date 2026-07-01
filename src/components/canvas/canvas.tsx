@@ -176,6 +176,40 @@ export function Canvas() {
     [camera.zoom, elements, selectedIds]
   );
 
+  const getNodePortAtPoint = useCallback(
+    (
+      point: Point,
+      side?: "input" | "output"
+    ): { id: string; side: "input" | "output"; point: Point } | null => {
+      const hitRadius = 16 / camera.zoom;
+      for (let i = elements.length - 1; i >= 0; i--) {
+        const el = elements[i];
+        if (!isNodeTool(el.type)) continue;
+        const b = getBounds(el);
+        const ports = [
+          {
+            id: el.id,
+            side: "input" as const,
+            point: { x: b.minX, y: b.minY + b.h / 2 },
+          },
+          {
+            id: el.id,
+            side: "output" as const,
+            point: { x: b.minX + b.w, y: b.minY + b.h / 2 },
+          },
+        ].filter((port) => !side || port.side === side);
+        const found = ports.find(
+          (port) =>
+            Math.hypot(point.x - port.point.x, point.y - port.point.y) <=
+            hitRadius
+        );
+        if (found) return found;
+      }
+      return null;
+    },
+    [camera.zoom, elements]
+  );
+
   useEffect(() => {
     if (!editingTextId) return;
     const input = inputRef.current;
@@ -214,20 +248,16 @@ export function Canvas() {
             return;
           }
         }
+        const outputPort = getNodePortAtPoint(rawWorld, "output");
+        if (outputPort) {
+          clearSelection();
+          selectElements([outputPort.id]);
+          setDrag({ kind: "connect", fromId: outputPort.id, start: outputPort.point });
+          setConnectEnd(outputPort.point);
+          return;
+        }
         const hit = getElementAtPoint(elements, rawWorld.x, rawWorld.y);
         if (hit) {
-          if (isNodeTool(hit.type)) {
-            const b = getBounds(hit);
-            const nearInput = Math.abs(rawWorld.x - b.minX) < 10;
-            const nearOutput = Math.abs(rawWorld.x - b.minX - b.w) < 10;
-            if (nearOutput) {
-              clearSelection();
-              selectElements([hit.id]);
-              setDrag({ kind: "connect", fromId: hit.id, start: world });
-              setConnectEnd(world);
-              return;
-            }
-          }
           if (e.shiftKey) {
             toggleSelection(hit.id);
           } else if (!selectedIds.includes(hit.id)) {
@@ -278,7 +308,7 @@ export function Canvas() {
       addElement(el);
       setDrag({ kind: "create", start: world, el });
     },
-    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, snapWorld, addElement, toggleSelection, selectElements, clearSelection, getResizeHandleAtPoint]
+    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, snapWorld, addElement, toggleSelection, selectElements, clearSelection, getResizeHandleAtPoint, getNodePortAtPoint]
   );
 
   const onPointerMove = useCallback(
@@ -330,7 +360,7 @@ export function Canvas() {
       }
 
       if (drag.kind === "connect") {
-        const world = snapWorld(getWorldPos(e));
+        const world = getWorldPos(e);
         setConnectEnd(world);
         return;
       }
@@ -346,13 +376,9 @@ export function Canvas() {
 
   const onPointerUp = useCallback(() => {
     if (drag.kind === "connect") {
-      const target = getElementAtPoint(elements, connectEnd?.x ?? 0, connectEnd?.y ?? 0);
-      if (target && target.id !== drag.fromId && isNodeTool(target.type)) {
-        const b = getBounds(target);
-        const nearInput = Math.abs((connectEnd?.x ?? 0) - b.minX) < 15;
-        if (nearInput) {
-          addConnection(drag.fromId, target.id);
-        }
+      const inputPort = connectEnd ? getNodePortAtPoint(connectEnd, "input") : null;
+      if (inputPort && inputPort.id !== drag.fromId) {
+        addConnection(drag.fromId, inputPort.id);
       }
     }
 
@@ -388,7 +414,7 @@ export function Canvas() {
     setMarquee(null);
     setConnectEnd(null);
     setGuides([]);
-  }, [drag, marquee, connectEnd, elements, removeElements, selectElements, addConnection]);
+  }, [drag, marquee, connectEnd, elements, removeElements, selectElements, addConnection, getNodePortAtPoint]);
 
   const onWheel = useCallback(
     (e: ReactWheelEvent<SVGSVGElement>) => {

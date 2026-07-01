@@ -44,7 +44,6 @@ import { OutputGalleryButton } from "@/components/canvas/output-gallery";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
-import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import { useRegisterCommands } from "@/lib/command-palette/context";
@@ -560,7 +559,6 @@ function ProjectCanvasInner({
         >
           <AIPanel projectId={project.id} projectName={project.name} />
           <ToolsPanel />
-          <LayersPanel />
           <ResizableHandle
             onPointerDown={leftPanel.startResize(1)}
             className="right-0 top-0 h-full"

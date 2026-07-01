@@ -25,14 +25,14 @@ export const BUILTIN_TEMPLATES: Template[] = [
   {
     id: "image-to-video",
     name: "Image to video",
-    description: "Source → Generate → Output",
+    description: "Source + Prompt → Generate → Output",
     elements: [],
     connections: [],
   },
   {
     id: "multi-variation",
     name: "Multi-variation",
-    description: "Prompt → Generate 4 outputs",
+    description: "Prompt → Generate → 4 outputs",
     elements: [],
     connections: [],
   },
@@ -73,6 +73,9 @@ function hydrateTemplates(): Template[] {
   const generate3 = buildNode("generate", 360, 520, {
     count: "4",
   });
+  const outputs3 = [0, 1, 2, 3].map((index) =>
+    buildNode("output", 620, 430 + index * 120, { outputIndex: String(index) })
+  );
 
   return [
     {
@@ -87,8 +90,8 @@ function hydrateTemplates(): Template[] {
     },
     {
       ...BUILTIN_TEMPLATES[2],
-      elements: [prompt3, generate3],
-      connections: [wire(prompt3, generate3)],
+      elements: [prompt3, generate3, ...outputs3],
+      connections: [wire(prompt3, generate3), ...outputs3.map((output) => wire(generate3, output))],
     },
   ];
 }

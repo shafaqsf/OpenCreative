@@ -381,8 +381,10 @@ function WorkflowNode({
       </foreignObject>
 
       <g stroke={strokeColor} strokeWidth={1.5}>
-        <circle cx={minX} cy={minY + h / 2} r={5} fill="#ffffff" />
-        <circle cx={minX + w} cy={minY + h / 2} r={5} fill="#ffffff" />
+        <circle cx={minX} cy={minY + h / 2} r={7} fill="#ffffff" />
+        <circle cx={minX} cy={minY + h / 2} r={2.5} fill={strokeColor} stroke="none" />
+        <circle cx={minX + w} cy={minY + h / 2} r={7} fill="#ffffff" />
+        <circle cx={minX + w} cy={minY + h / 2} r={2.5} fill={strokeColor} stroke="none" />
       </g>
     </g>
   );

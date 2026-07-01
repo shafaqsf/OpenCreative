@@ -1,4 +1,4 @@
-import { ProjectsPanel, ToolsPanel, AIPanel, LayersPanel } from "./panels";
+import { ProjectsPanel, ToolsPanel, AIPanel } from "./panels";
 
 export function Sidebar() {
   return (
@@ -14,7 +14,6 @@ export function Sidebar() {
       <nav className="flex-1">
         <ProjectsPanel />
         <ToolsPanel />
-        <LayersPanel />
         <AIPanel />
       </nav>
     </aside>
