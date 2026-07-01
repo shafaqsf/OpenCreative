@@ -692,16 +692,21 @@ export function AIPanel({
                   >
                     {message.content}
                   </div>
-                  {message.checkpointId && (
-                    <button
-                      onClick={() => restoreCheckpoint(message.checkpointId!)}
-                      className="mt-1 flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-900"
-                      title="Revert workflow to state before this agent response"
-                    >
-                      <RotateCcw className="size-3" />
-                      Restore checkpoint
-                    </button>
-                  )}
+                  {(() => {
+                    const cpId =
+                      message.checkpointId ??
+                      activeCheckpoints.find((c) => c.messageId === message.id)?.id;
+                    return cpId ? (
+                      <button
+                        onClick={() => restoreCheckpoint(cpId)}
+                        className="mt-1 flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-900"
+                        title="Revert workflow to state before this agent response"
+                      >
+                        <RotateCcw className="size-3" />
+                        Restore checkpoint
+                      </button>
+                    ) : null;
+                  })()}
                 </div>
               ))
             )}
