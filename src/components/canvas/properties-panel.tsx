@@ -29,7 +29,6 @@ const NODE_CONFIG: Record<
   generate: {
     label: "Generate",
     fields: [
-      { key: "prompt", label: "Prompt", type: "textarea", placeholder: "Describe the output…" },
       {
         key: "model",
         label: "Model",

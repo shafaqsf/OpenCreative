@@ -54,21 +54,23 @@ function wire(from: CanvasElement, to: CanvasElement): Connection {
 }
 
 function hydrateTemplates(): Template[] {
-  const prompt = buildNode("prompt", 80, 120);
-  const generate1 = buildNode("generate", 360, 120, {
-    prompt: "A cinematic scene based on the prompt",
+  const prompt = buildNode("prompt", 80, 120, {
+    content: "A cinematic scene based on the prompt",
   });
+  const generate1 = buildNode("generate", 360, 120);
   const output1 = buildNode("output", 620, 120, { outputIndex: "0" });
 
   const source = buildNode("source", 80, 320, { fileType: "image" });
-  const generate2 = buildNode("generate", 360, 320, {
-    prompt: "Animate this image into a video",
+  const prompt2 = buildNode("prompt", 80, 500, {
+    content: "Animate this image into a video",
   });
+  const generate2 = buildNode("generate", 360, 320);
   const output2 = buildNode("output", 620, 320, { outputIndex: "0" });
 
-  const prompt3 = buildNode("prompt", 80, 520);
+  const prompt3 = buildNode("prompt", 80, 680, {
+    content: "Four creative variations",
+  });
   const generate3 = buildNode("generate", 360, 520, {
-    prompt: "Four creative variations",
     count: "4",
   });
 
@@ -80,8 +82,8 @@ function hydrateTemplates(): Template[] {
     },
     {
       ...BUILTIN_TEMPLATES[1],
-      elements: [source, generate2, output2],
-      connections: [wire(source, generate2), wire(generate2, output2)],
+      elements: [source, prompt2, generate2, output2],
+      connections: [wire(source, generate2), wire(prompt2, generate2), wire(generate2, output2)],
     },
     {
       ...BUILTIN_TEMPLATES[2],

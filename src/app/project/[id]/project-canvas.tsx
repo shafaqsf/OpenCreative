@@ -219,9 +219,7 @@ function ProjectCanvasInner({
             .map((node) => node?.properties.content)
             .filter(Boolean)
             .join("\n");
-          const prompt = [inputPrompt, node.nodeData.properties.prompt]
-            .filter(Boolean)
-            .join("\n\n");
+          const prompt = inputPrompt.trim();
           const count = parseInt(node.nodeData.properties.count || "1", 10);
           const allUrls: string[] = [];
           let lastError: string | undefined;

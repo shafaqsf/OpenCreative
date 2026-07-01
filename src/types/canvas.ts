@@ -94,7 +94,6 @@ export const NODE_CONFIG: Record<
     w: 200,
     h: 200,
     defaultProps: {
-      prompt: "",
       model: "kwaivgi/kling-v3.0-pro",
       duration: "5",
       count: "1",
