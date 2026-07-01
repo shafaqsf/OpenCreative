@@ -55,28 +55,6 @@ export type GeneratedMediaInput = {
   sourceUrl?: string;
 };
 
-export type GenerationLog = {
-  id: string;
-  project_id: string;
-  node_id: string;
-  level: "info" | "warning" | "error";
-  message: string;
-  model: string | null;
-  prompt: string | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
-};
-
-export type GenerationLogInput = {
-  projectId: string;
-  nodeId: string;
-  level: "info" | "warning" | "error";
-  message: string;
-  model?: string;
-  prompt?: string;
-  metadata?: Record<string, unknown>;
-};
-
 export async function listFolders(): Promise<Folder[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -269,25 +247,6 @@ export async function saveGeneratedMedia(input: GeneratedMediaInput): Promise<Ge
     .single();
   if (error) throw new Error(error.message);
   return data as GeneratedMedia;
-}
-
-export async function saveGenerationLog(input: GenerationLogInput): Promise<GenerationLog> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("generation_logs")
-    .insert({
-      project_id: input.projectId,
-      node_id: input.nodeId,
-      level: input.level,
-      message: input.message,
-      model: input.model ?? null,
-      prompt: input.prompt ?? null,
-      metadata: input.metadata ?? {},
-    })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as GenerationLog;
 }
 
 function normalizeWorkflow(raw: unknown): WorkflowState {

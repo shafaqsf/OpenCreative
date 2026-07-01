@@ -34,7 +34,7 @@ import {
   Magnet,
 } from "lucide-react";
 import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
-import { saveGeneratedMedia, saveGenerationLog, updateProjectWorkflow } from "@/lib/projects/service";
+import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
@@ -263,27 +263,6 @@ function ProjectCanvasInner({
                 outputIndex: i,
                 error: lastError,
               });
-              try {
-                await saveGenerationLog({
-                  projectId: project.id,
-                  nodeId: id,
-                  level: "error",
-                  message: lastError,
-                  model: selectedModel.id,
-                  prompt,
-                  metadata: {
-                    outputType: selectedModel.outputType,
-                    outputIndex: i,
-                    sourceUrl,
-                  },
-                });
-              } catch (logError) {
-                console.error("OpenCreative generation log save failed", {
-                  projectId: project.id,
-                  nodeId: id,
-                  error: logError instanceof Error ? logError.message : logError,
-                });
-              }
               const outputId = currentOutputIds[i];
               const outputNode = outputId ? getNode(outputId) : null;
               if (outputNode?.nodeData) {
