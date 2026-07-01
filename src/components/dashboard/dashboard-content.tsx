@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Folder,
@@ -14,6 +14,8 @@ import {
   Clock,
   Calendar,
   Trash2,
+  FolderInput,
+  FolderX,
 } from "lucide-react";
 import type { Folder as FolderType, Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
@@ -30,12 +32,14 @@ export function DashboardContent({
   onCreateProject,
   onDeleteFolder,
   onDeleteProject,
+  onMoveProject,
 }: {
   folders: FolderType[];
   allProjects: Project[];
   onCreateProject: (name: string) => void;
   onDeleteFolder?: (id: string) => void;
   onDeleteProject?: (id: string) => void;
+  onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
@@ -189,9 +193,11 @@ export function DashboardContent({
               <ProjectCard
                 key={project.id}
                 project={project}
+                folders={folders}
                 pinned={pinned.has(project.id)}
                 onTogglePin={toggle}
                 onDeleteProject={onDeleteProject}
+                onMoveProject={onMoveProject}
               />
             ))}
           </div>
@@ -201,9 +207,11 @@ export function DashboardContent({
               <ProjectListItem
                 key={project.id}
                 project={project}
+                folders={folders}
                 pinned={pinned.has(project.id)}
                 onTogglePin={toggle}
                 onDeleteProject={onDeleteProject}
+                onMoveProject={onMoveProject}
               />
             ))}
           </div>
@@ -214,16 +222,102 @@ export function DashboardContent({
   );
 }
 
+function ProjectMenu({
+  project,
+  folders,
+  onMoveProject,
+}: {
+  project: Project;
+  folders: FolderType[];
+  onMoveProject?: (id: string, folderId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler, true);
+    return () => document.removeEventListener("mousedown", handler, true);
+  }, [open]);
+
+  const availableFolders = folders.filter((f) => f.id !== project.folder_id);
+
+  return (
+    <div ref={ref} className="relative" onClick={(e) => e.preventDefault()}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="p-1 text-neutral-400 hover:text-neutral-700"
+        title="More actions"
+      >
+        <MoreHorizontal className="size-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+          {availableFolders.length > 0 && (
+            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+              Move to folder
+            </div>
+          )}
+          {availableFolders.map((f) => (
+            <button
+              key={f.id}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveProject?.(project.id, f.id);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+            >
+              <FolderInput className="size-3.5 text-neutral-400" />
+              {f.name}
+            </button>
+          ))}
+          {project.folder_id && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveProject?.(project.id, null);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+            >
+              <FolderX className="size-3.5 text-neutral-400" />
+              Remove from folder
+            </button>
+          )}
+          {availableFolders.length === 0 && !project.folder_id && (
+            <div className="px-3 py-2 text-xs text-neutral-400">
+              No other folders
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProjectCard({
   project,
+  folders,
   pinned,
   onTogglePin,
   onDeleteProject,
+  onMoveProject,
 }: {
   project: Project;
+  folders: FolderType[];
   pinned: boolean;
   onTogglePin: (id: string) => void;
   onDeleteProject?: (id: string) => void;
+  onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
   return (
     <Link
@@ -244,11 +338,11 @@ function ProjectCard({
           <p className="text-sm font-medium text-neutral-900 line-clamp-1">
             {project.name}
           </p>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100" onClick={(e) => e.preventDefault()}>
             {onDeleteProject && (
               <button
                 onClick={(e) => {
-                  e.preventDefault();
+                  e.stopPropagation();
                   onDeleteProject(project.id);
                 }}
                 className="p-1 text-neutral-400 hover:text-red-600"
@@ -257,7 +351,9 @@ function ProjectCard({
                 <Trash2 className="size-3.5" />
               </button>
             )}
-            <MoreHorizontal className="size-4 text-neutral-300" />
+            {onMoveProject && (
+              <ProjectMenu project={project} folders={folders} onMoveProject={onMoveProject} />
+            )}
           </div>
         </div>
         <p className="text-xs text-neutral-500">Canvas workflow</p>
@@ -268,14 +364,18 @@ function ProjectCard({
 
 function ProjectListItem({
   project,
+  folders,
   pinned,
   onTogglePin,
   onDeleteProject,
+  onMoveProject,
 }: {
   project: Project;
+  folders: FolderType[];
   pinned: boolean;
   onTogglePin: (id: string) => void;
   onDeleteProject?: (id: string) => void;
+  onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
   return (
     <Link
@@ -303,7 +403,9 @@ function ProjectListItem({
             <Trash2 className="size-3.5" />
           </button>
         )}
-        <MoreHorizontal className="size-4 text-neutral-300" />
+        {onMoveProject && (
+          <ProjectMenu project={project} folders={folders} onMoveProject={onMoveProject} />
+        )}
       </div>
     </Link>
   );

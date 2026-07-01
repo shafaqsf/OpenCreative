@@ -9,6 +9,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Loader2,
+  Play,
   MousePointer2,
   Square,
   Circle,

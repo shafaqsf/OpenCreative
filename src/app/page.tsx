@@ -60,6 +60,7 @@ export default async function DashboardPage() {
           onCreateProject={handleCreateProject}
           onDeleteFolder={handleDeleteFolder}
           onDeleteProject={handleDeleteProject}
+          onMoveProject={handleMoveProject}
         />
       </div>
     </>
