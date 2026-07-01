@@ -7,9 +7,12 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { useCanvas, newElement, newNode } from "@/lib/canvas/context";
+import { Copy, Trash2, Layers, ArrowUp, ArrowDown, ClipboardPaste, MousePointer2 } from "lucide-react";
+import { useCanvas, newElement, newNode, uid } from "@/lib/canvas/context";
 import { screenToWorld, worldToScreen } from "@/lib/canvas/geometry";
 import { getElementAtPoint, getBounds } from "@/lib/canvas/hit-test";
+import { useToast } from "@/lib/toast/context";
+import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { Shape } from "./shape";
 import { SelectionOverlay } from "./selection-overlay";
 import type { CanvasElement, NodeType, Point } from "@/types/canvas";
@@ -54,7 +57,14 @@ export function Canvas() {
     moveElements,
     setCamera,
     addConnection,
+    bringToFront,
+    sendToBack,
+    clipboard,
+    copyToClipboard,
+    duplicateSelection,
+    selectAll,
   } = useCanvas();
+  const { addToast } = useToast();
 
   const svgRef = useRef<SVGSVGElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +74,12 @@ export function Canvas() {
   );
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [connectEnd, setConnectEnd] = useState<Point | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    open: boolean;
+    x: number;
+    y: number;
+    targetId?: string;
+  }>({ open: false, x: 0, y: 0 });
 
   const getMousePos = useCallback((e: ReactPointerEvent) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -309,6 +325,114 @@ export function Canvas() {
     setEditingTextId(null);
   }
 
+  function pasteAt(world: Point) {
+    if (clipboard.length === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    for (const el of clipboard) {
+      const b = getBounds(el);
+      minX = Math.min(minX, b.minX);
+      minY = Math.min(minY, b.minY);
+    }
+    const idMap = new Map<string, string>();
+    const clones = clipboard.map((el) => {
+      const newId = uid();
+      idMap.set(el.id, newId);
+      const offsetX = world.x - minX;
+      const offsetY = world.y - minY;
+      return {
+        ...el,
+        id: newId,
+        x: el.x + offsetX,
+        y: el.y + offsetY,
+        points: el.points?.map((p) => ({ x: p.x + offsetX, y: p.y + offsetY })),
+      };
+    });
+    clones.forEach(addElement);
+    selectElements(clones.map((el) => el.id));
+    addToast({ title: "Pasted", message: `${clones.length} item${clones.length === 1 ? "" : "s"} pasted.`, variant: "info", duration: 2000 });
+  }
+
+  function copySelected() {
+    if (selectedIds.length === 0) return;
+    copyToClipboard(selectedIds);
+    addToast({ title: "Copied", message: `${selectedIds.length} item${selectedIds.length === 1 ? "" : "s"} copied.`, variant: "info", duration: 2000 });
+  }
+
+  function onContextMenu(e: React.MouseEvent<SVGSVGElement>) {
+    e.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const screenPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const world = screenToWorld(screenPos, camera);
+    const hit = getElementAtPoint(elements, world.x, world.y);
+    if (hit && !selectedIds.includes(hit.id)) {
+      selectElements([hit.id]);
+    }
+    setContextMenu({ open: true, x: e.clientX, y: e.clientY, targetId: hit?.id });
+  }
+
+  function buildMenuItems(): ContextMenuItem[] {
+    const hasSelection = selectedIds.length > 0;
+    const single = selectedIds.length === 1 ? elements.find((el) => el.id === selectedIds[0]) : undefined;
+
+    const items: ContextMenuItem[] = [];
+
+    if (hasSelection) {
+      items.push({
+        label: "Copy",
+        shortcut: "Ctrl+C",
+        icon: <Copy className="size-3.5" />,
+        onClick: copySelected,
+      });
+      items.push({
+        label: "Duplicate",
+        shortcut: "Ctrl+D",
+        icon: <Layers className="size-3.5" />,
+        onClick: duplicateSelection,
+      });
+      items.push({ type: "separator" });
+      items.push({
+        label: "Bring to front",
+        icon: <ArrowUp className="size-3.5" />,
+        onClick: () => single ? bringToFront(single.id) : selectedIds.forEach(bringToFront),
+      });
+      items.push({
+        label: "Send to back",
+        icon: <ArrowDown className="size-3.5" />,
+        onClick: () => single ? sendToBack(single.id) : selectedIds.forEach(sendToBack),
+      });
+      items.push({ type: "separator" });
+      items.push({
+        label: "Delete",
+        shortcut: "Del",
+        danger: true,
+        icon: <Trash2 className="size-3.5" />,
+        onClick: () => removeElements(selectedIds),
+      });
+    } else {
+      items.push({
+        label: "Paste",
+        shortcut: "Ctrl+V",
+        disabled: clipboard.length === 0,
+        icon: <ClipboardPaste className="size-3.5" />,
+        onClick: () => {
+          const world = screenToWorld({ x: contextMenu.x, y: contextMenu.y }, camera);
+          pasteAt(world);
+        },
+      });
+      items.push({ type: "separator" });
+      items.push({
+        label: "Select all",
+        shortcut: "Ctrl+A",
+        icon: <MousePointer2 className="size-3.5" />,
+        onClick: selectAll,
+      });
+    }
+
+    return items;
+  }
+
   return (
     <div className="relative h-full w-full">
       <svg
@@ -320,6 +444,7 @@ export function Canvas() {
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerUp}
         onWheel={onWheel}
+        onContextMenu={onContextMenu}
       >
         <g
           style={{
@@ -407,6 +532,13 @@ export function Canvas() {
           }}
         />
       )}
+      <ContextMenu
+        open={contextMenu.open}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={buildMenuItems()}
+        onClose={() => setContextMenu((prev) => ({ ...prev, open: false }))}
+      />
     </div>
   );
 }

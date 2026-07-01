@@ -18,19 +18,39 @@ const SHORTCUTS: Record<string, ToolId> = {
 };
 
 export function useKeyboardShortcuts() {
-  const { setActiveTool, removeElements, selectedIds, undo, redo, canUndo, canRedo } = useCanvas();
+  const { setActiveTool, removeElements, selectedIds, undo, redo, canUndo, canRedo, copyToClipboard, duplicateSelection, selectAll } = useCanvas();
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      const mod = e.ctrlKey || e.metaKey;
+
+      if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) {
           if (canRedo) redo();
         } else {
           if (canUndo) undo();
         }
+        return;
+      }
+
+      if (mod && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copyToClipboard(selectedIds);
+        return;
+      }
+
+      if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        duplicateSelection();
+        return;
+      }
+
+      if (mod && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        selectAll();
         return;
       }
 
@@ -43,12 +63,12 @@ export function useKeyboardShortcuts() {
       }
 
       const tool = SHORTCUTS[e.key.toLowerCase()];
-      if (tool && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (tool && !mod && !e.altKey) {
         setActiveTool(tool);
       }
     }
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setActiveTool, removeElements, selectedIds, undo, redo, canUndo, canRedo]);
+  }, [setActiveTool, removeElements, selectedIds, undo, redo, canUndo, canRedo, copyToClipboard, duplicateSelection, selectAll]);
 }

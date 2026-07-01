@@ -27,6 +27,7 @@ import {
   isNodeTool,
 } from "@/types/canvas";
 import { useHistory } from "./use-history";
+import { cloneElements } from "./clone";
 
 type CanvasContextValue = {
   elements: CanvasElement[];
@@ -34,6 +35,7 @@ type CanvasContextValue = {
   activeTool: ToolId;
   camera: Camera;
   connections: Connection[];
+  clipboard: CanvasElement[];
 
   setActiveTool: (tool: ToolId) => void;
   addElement: (el: CanvasElement) => void;
@@ -58,6 +60,9 @@ type CanvasContextValue = {
     outputUrls?: string[]
   ) => void;
 
+  copyToClipboard: (ids: string[]) => void;
+  duplicateSelection: () => void;
+  selectAll: () => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -111,6 +116,7 @@ export function CanvasProvider({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [camera, setCameraState] = useState<Camera>(initialState.camera);
+  const [clipboard, setClipboard] = useState<CanvasElement[]>([]);
   const [mounted, setMounted] = useState(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -247,6 +253,29 @@ export function CanvasProvider({
     [history.set]
   );
 
+  const copyToClipboard = useCallback(
+    (ids: string[]) => {
+      const items = history.present.elements.filter((el) => ids.includes(el.id));
+      setClipboard(cloneElements(items, 0, 0));
+    },
+    [history.present.elements]
+  );
+
+  const duplicateSelection = useCallback(() => {
+    if (selectedIds.length === 0) return;
+    const clones = cloneElements(
+      history.present.elements.filter((el) => selectedIds.includes(el.id)),
+      20,
+      20
+    );
+    clones.forEach((el) => addElement(el));
+    selectElements(clones.map((el) => el.id));
+  }, [history.present.elements, selectedIds, addElement, selectElements]);
+
+  const selectAll = useCallback(() => {
+    selectElements(history.present.elements.map((el) => el.id));
+  }, [history.present.elements, selectElements]);
+
   const addConnection = useCallback(
     (fromId: string, toId: string) => {
       history.set((prev) => {
@@ -315,6 +344,7 @@ export function CanvasProvider({
       activeTool,
       camera,
       connections,
+      clipboard,
       setActiveTool,
       addElement,
       updateElement,
@@ -331,6 +361,9 @@ export function CanvasProvider({
       removeConnection,
       updateNodeProperties,
       updateNodeStatus,
+      copyToClipboard,
+      duplicateSelection,
+      selectAll,
       undo: history.undo,
       redo: history.redo,
       canUndo: history.canUndo,
@@ -342,6 +375,7 @@ export function CanvasProvider({
       activeTool,
       camera,
       connections,
+      clipboard,
       addElement,
       updateElement,
       removeElements,
@@ -357,6 +391,9 @@ export function CanvasProvider({
       removeConnection,
       updateNodeProperties,
       updateNodeStatus,
+      copyToClipboard,
+      duplicateSelection,
+      selectAll,
       history.undo,
       history.redo,
       history.canUndo,

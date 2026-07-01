@@ -12,6 +12,7 @@ import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
+import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import type { Project } from "@/lib/projects/service";
 import type { WorkflowState } from "@/types/canvas";
 
@@ -62,17 +63,7 @@ function ProjectCanvasInner({
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Delete" || e.key === "Backspace") {
-        const target = e.target as HTMLElement;
-        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return;
-        if (selectedIds.length > 0) removeElements(selectedIds);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedIds, removeElements]);
+  useKeyboardShortcuts();
 
   useEffect(() => {
     const nowConnections = connections;
