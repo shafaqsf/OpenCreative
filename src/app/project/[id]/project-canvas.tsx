@@ -36,7 +36,7 @@ import {
   BellOff,
 } from "lucide-react";
 import { CanvasProvider, useCanvas } from "@/lib/canvas/context";
-import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/service";
+import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/client-service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";

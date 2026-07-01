@@ -31,7 +31,7 @@ import {
   listAgentCheckpoints,
   createAgentCheckpoint,
   getAgentCheckpoint,
-} from "@/lib/projects/service";
+} from "@/lib/projects/client-service";
 
 type LocalChat = {
   id: string;
