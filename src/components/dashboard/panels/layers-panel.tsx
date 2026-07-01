@@ -1,18 +1,11 @@
 "use client";
 
-import { Layers, Trash2 } from "lucide-react";
+import { Layers } from "lucide-react";
 import { Panel } from "./panel";
 import { useCanvas } from "@/lib/canvas/context";
 
 export function LayersPanel() {
-  const {
-    elements,
-    selectedIds,
-    selectElements,
-    removeElements,
-    bringToFront,
-    sendToBack,
-  } = useCanvas();
+  const { elements, selectedIds, selectElements } = useCanvas();
 
   return (
     <Panel title="Layers">

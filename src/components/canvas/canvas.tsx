@@ -103,6 +103,7 @@ export function Canvas() {
       if (activeTool === "text") {
         const el = newElement("text", world.x, world.y);
         el.height = 20;
+        el.width = 80;
         el.text = "";
         addElement(el);
         selectElements([el.id]);
@@ -286,8 +287,8 @@ export function Canvas() {
             y={Math.min(marquee.start.y, marquee.end.y)}
             width={Math.abs(marquee.end.x - marquee.start.x)}
             height={Math.abs(marquee.end.y - marquee.start.y)}
-            fill="rgba(0,102,255,0.06)"
-            stroke="#0066ff"
+            fill="rgba(23,23,23,0.06)"
+            stroke="#171717"
             strokeWidth={1 / camera.zoom}
             strokeDasharray={`${4 / camera.zoom} ${3 / camera.zoom}`}
           />
