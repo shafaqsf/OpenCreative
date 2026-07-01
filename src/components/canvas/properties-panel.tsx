@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { newNode, uid, useCanvas } from "@/lib/canvas/context";
+import { useCanvas } from "@/lib/canvas/context";
 import {
   GENERATION_MODELS,
   getGenerationModel,
@@ -72,7 +72,6 @@ export function PropertiesPanel() {
     elements,
     selectedIds,
     connections,
-    addElements,
     removeElements,
     removeConnection,
     updateNodeProperties,
@@ -118,7 +117,7 @@ export function PropertiesPanel() {
         count: String(normalizeOutputCount(nd.properties.count, nextModel.id)),
       };
       updateNodeProperties(el.id, properties);
-      syncGenerateOutputs(properties);
+      syncConnectedOutputTypes(properties);
       return;
     }
 
@@ -128,17 +127,15 @@ export function PropertiesPanel() {
         count: String(normalizeOutputCount(value, nd.properties.model)),
       };
       updateNodeProperties(el.id, properties);
-      syncGenerateOutputs(properties);
       return;
     }
 
     updateNodeProperties(el.id, { ...nd.properties, [key]: value });
   }
 
-  function syncGenerateOutputs(generateProps: Record<string, string>) {
+  function syncConnectedOutputTypes(generateProps: Record<string, string>) {
     if (nd.nodeType !== "generate") return;
     const model = getGenerationModel(generateProps.model);
-    const count = normalizeOutputCount(generateProps.count, model.id);
     const outputConnections = connections
       .filter((connection) => connection.fromId === el.id)
       .map((connection) => ({
@@ -149,35 +146,14 @@ export function PropertiesPanel() {
         Boolean(item.output)
       );
 
-    outputConnections.slice(0, count).forEach(({ output }, index) => {
+    outputConnections.forEach(({ output }, index) => {
       if (!output.nodeData) return;
       updateNodeProperties(output.id, {
         ...output.nodeData.properties,
-          outputIndex: String(index),
-          outputType: model.outputType,
-        });
-    });
-
-    const extraOutputs = outputConnections.slice(count).map(({ output }) => output.id);
-    if (extraOutputs.length > 0) removeElements(extraOutputs);
-
-    const missing = count - outputConnections.length;
-    if (missing <= 0) return;
-
-    const newOutputs = Array.from({ length: missing }, (_, offset) => {
-      const index = outputConnections.length + offset;
-      const output = newNode("output", el.x + el.width + 60, el.y + index * 120);
-      output.nodeData!.properties = {
-        ...output.nodeData!.properties,
         outputIndex: String(index),
         outputType: model.outputType,
-      };
-      return output;
+      });
     });
-    addElements(
-      newOutputs,
-      newOutputs.map((output) => ({ id: uid(), fromId: el.id, toId: output.id }))
-    );
   }
 
   async function handleUpload(file: File) {

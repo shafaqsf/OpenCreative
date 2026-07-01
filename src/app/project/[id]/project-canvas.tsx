@@ -34,7 +34,7 @@ import {
   Magnet,
 } from "lucide-react";
 import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
-import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/service";
+import { saveGeneratedMedia, saveGenerationLog, updateProjectWorkflow } from "@/lib/projects/service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
@@ -97,7 +97,6 @@ function ProjectCanvasInner({
     elements,
     connections,
     updateNodeStatus,
-    updateNodeProperties,
     addElements,
     removeElements,
     selectedIds,
@@ -129,53 +128,36 @@ function ProjectCanvasInner({
     let nowConnections = [...connections];
     const outputElements: typeof elements = [];
     const outputConnections: typeof connections = [];
+    const runOutputIds = new Map<string, string[]>();
 
     for (const gen of nowElements) {
       if (gen.type !== "generate" || !gen.nodeData) continue;
       const model = getGenerationModel(gen.nodeData.properties.model);
       const count = normalizeOutputCount(gen.nodeData.properties.count, model.id);
-      const existingOut: string[] = [];
+      const existingOutputCount = nowConnections.filter((conn) => {
+        if (conn.fromId !== gen.id) return false;
+        return nowElements.some((el) => el.id === conn.toId && el.type === "output");
+      }).length;
+      const genBounds = { x: gen.x, y: gen.y, w: gen.width, h: gen.height };
+      const batchIds: string[] = [];
 
-      let outConn = nowConnections.filter((c) => c.fromId === gen.id);
-      for (const c of outConn) {
-        const t = nowElements.find((e) => e.id === c.toId);
-        if (t?.type === "output") existingOut.push(c.toId);
+      for (let i = 0; i < count; i++) {
+        const outputOrdinal = existingOutputCount + i;
+        const outX = genBounds.x + genBounds.w + 60;
+        const outY = genBounds.y + outputOrdinal * 120;
+        const outEl = newNode("output", outX, outY);
+        outEl.nodeData!.properties.outputIndex = String(i);
+        outEl.nodeData!.properties.outputRunIndex = String(outputOrdinal);
+        outEl.nodeData!.properties.outputType = model.outputType;
+        const outConnection = { id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id };
+        outputElements.push(outEl);
+        outputConnections.push(outConnection);
+        nowElements.push(outEl);
+        nowConnections.push(outConnection);
+        batchIds.push(outEl.id);
       }
 
-      existingOut.slice(0, count).forEach((outId, index) => {
-        const out = nowElements.find((el) => el.id === outId);
-        if (!out?.nodeData) return;
-        const properties = {
-          ...out.nodeData.properties,
-          outputIndex: String(index),
-          outputType: model.outputType,
-        };
-        updateNodeProperties(out.id, properties);
-        out.nodeData = { ...out.nodeData, properties };
-      });
-
-      if (existingOut.length > count) {
-        const toRemove = existingOut.slice(count);
-        removeElements(toRemove);
-        nowElements = nowElements.filter((el) => !toRemove.includes(el.id));
-        nowConnections = nowConnections.filter(
-          (conn) => !toRemove.includes(conn.fromId) && !toRemove.includes(conn.toId)
-        );
-      } else if (existingOut.length < count) {
-        const genBounds = { x: gen.x, y: gen.y, w: gen.width, h: gen.height };
-        for (let i = existingOut.length; i < count; i++) {
-          const outX = genBounds.x + genBounds.w + 60;
-          const outY = genBounds.y + i * 80;
-          const outEl = newNode("output", outX, outY);
-          outEl.nodeData!.properties.outputIndex = String(i);
-          outEl.nodeData!.properties.outputType = model.outputType;
-          const outConnection = { id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id };
-          outputElements.push(outEl);
-          outputConnections.push(outConnection);
-          nowElements.push(outEl);
-          nowConnections.push(outConnection);
-        }
-      }
+      runOutputIds.set(gen.id, batchIds);
     }
 
     addElements(outputElements, outputConnections);
@@ -238,6 +220,7 @@ function ProjectCanvasInner({
           const selectedModel = getGenerationModel(node.nodeData.properties.model);
           const count = normalizeOutputCount(node.nodeData.properties.count, selectedModel.id);
           const allUrls: string[] = [];
+          const currentOutputIds = runOutputIds.get(id) ?? [];
           let lastError: string | undefined;
 
           for (let i = 0; i < count; i++) {
@@ -249,6 +232,17 @@ function ProjectCanvasInner({
             });
             if (result.url) {
               allUrls.push(result.url);
+              const outputId = currentOutputIds[i];
+              const outputNode = outputId ? getNode(outputId) : null;
+              if (outputNode?.nodeData) {
+                updateNodeStatus(outputNode.id, "done", result.url);
+                outputNode.nodeData = {
+                  ...outputNode.nodeData,
+                  status: "done",
+                  outputUrl: result.url,
+                  error: undefined,
+                };
+              }
               await saveGeneratedMedia({
                 projectId: project.id,
                 nodeId: id,
@@ -261,8 +255,47 @@ function ProjectCanvasInner({
               });
             } else {
               lastError = result.error || "Generation failed";
+              console.error("OpenCreative workflow generation failed", {
+                projectId: project.id,
+                nodeId: id,
+                model: selectedModel.id,
+                outputType: selectedModel.outputType,
+                outputIndex: i,
+                error: lastError,
+              });
+              try {
+                await saveGenerationLog({
+                  projectId: project.id,
+                  nodeId: id,
+                  level: "error",
+                  message: lastError,
+                  model: selectedModel.id,
+                  prompt,
+                  metadata: {
+                    outputType: selectedModel.outputType,
+                    outputIndex: i,
+                    sourceUrl,
+                  },
+                });
+              } catch (logError) {
+                console.error("OpenCreative generation log save failed", {
+                  projectId: project.id,
+                  nodeId: id,
+                  error: logError instanceof Error ? logError.message : logError,
+                });
+              }
+              const outputId = currentOutputIds[i];
+              const outputNode = outputId ? getNode(outputId) : null;
+              if (outputNode?.nodeData) {
+                updateNodeStatus(outputNode.id, "error", undefined, lastError);
+                outputNode.nodeData = {
+                  ...outputNode.nodeData,
+                  status: "error",
+                  outputUrl: undefined,
+                  error: lastError,
+                };
+              }
               anyError = true;
-              break;
             }
           }
 
@@ -272,16 +305,9 @@ function ProjectCanvasInner({
             updateNodeStatus(id, "error", undefined, lastError || "Generation failed");
           }
         } else if (node.type === "output") {
-          const inputIds = getInputs(id);
-          const genNode = inputIds.length > 0 ? getNode(inputIds[0]) : null;
-          const genUrls = genNode?.nodeData?.outputUrls;
-          const index = parseInt(node.nodeData.properties.outputIndex || "0", 10);
-
-          if (genUrls && genUrls.length > index) {
-            updateNodeStatus(id, "done", genUrls[index]);
-          } else {
-            updateNodeStatus(id, "error", undefined, "No output at this index");
-            anyError = true;
+          if (node.nodeData.status === "idle") {
+            done.add(id);
+            continue;
           }
         } else {
           updateNodeStatus(id, "done", node.nodeData.outputUrl);
@@ -301,7 +327,7 @@ function ProjectCanvasInner({
       }
 
       if (anyError) {
-        addToast({ title: "Workflow finished", message: "Some nodes encountered errors. Check the output nodes for details.", variant: "warning" });
+        addToast({ title: "Workflow finished with errors", message: "Generation errors were logged. Select failed output nodes for details.", variant: "warning" });
       } else if (graph.length > 0) {
         addToast({ title: "Workflow complete", message: "All nodes finished successfully.", variant: "success" });
       }
@@ -314,7 +340,7 @@ function ProjectCanvasInner({
     } finally {
       setRunning(false);
     }
-  }, [elements, connections, running, project.id, addElements, removeElements, updateNodeProperties, updateNodeStatus, addToast]);
+  }, [elements, connections, running, project.id, addElements, updateNodeStatus, addToast]);
 
   const commands = useMemo(
     () => [

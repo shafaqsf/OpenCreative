@@ -49,14 +49,65 @@ export async function runGeneration(params: {
     }
 
     const json = await res.json();
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) return { error: "No content in response" };
+    const foundUrl = findUrl(json);
+    if (foundUrl) return { url: foundUrl };
 
-    const urlMatch = content.match(/https?:\/\/[^\s<>"]+/);
+    const content = json.choices?.[0]?.message?.content;
+    if (!content) {
+      console.error("OpenCreative generation response missing content", {
+        model: params.model,
+        outputType: params.outputType,
+        response: json,
+      });
+      return { error: "No content in response" };
+    }
+
+    const urlMatch = stringifyContent(content).match(/https?:\/\/[^\s<>"]+/);
     if (urlMatch) return { url: urlMatch[0] };
 
-    return { error: "No URL found in response" };
+    console.error("OpenCreative generation response did not include a media URL", {
+      model: params.model,
+      outputType: params.outputType,
+      response: json,
+    });
+    return { error: "No media URL found in model response" };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Request failed" };
+    const message = err instanceof Error ? err.message : "Request failed";
+    console.error("OpenCreative generation request failed", {
+      model: params.model,
+      outputType: params.outputType,
+      error: message,
+    });
+    return { error: message };
   }
+}
+
+function stringifyContent(content: unknown): string {
+  return typeof content === "string" ? content : JSON.stringify(content);
+}
+
+function findUrl(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value.match(/https?:\/\/[^\s<>"]+/)?.[0];
+  }
+  if (!value || typeof value !== "object") return undefined;
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findUrl(item);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["url", "image_url", "video_url", "output_url", "asset_url"]) {
+    const found = findUrl(record[key]);
+    if (found) return found;
+  }
+  for (const child of Object.values(record)) {
+    const found = findUrl(child);
+    if (found) return found;
+  }
+  return undefined;
 }
