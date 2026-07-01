@@ -2,6 +2,11 @@
 
 import { useRef } from "react";
 import { useCanvas } from "@/lib/canvas/context";
+import {
+  GENERATION_MODELS,
+  getGenerationModel,
+  normalizeOutputCount,
+} from "@/lib/canvas/generation-models";
 
 const NODE_CONFIG: Record<
   string,
@@ -33,13 +38,10 @@ const NODE_CONFIG: Record<
         key: "model",
         label: "Model",
         type: "select",
-        options: [
-          { value: "kwaivgi/kling-v3.0-pro", label: "Kling 3.0 Pro" },
-          { value: "kwaivgi/kling-v3.0-std", label: "Kling 3.0 Standard" },
-          { value: "bytedance/seedance-2.0-fast", label: "Seedance 2.0 Fast" },
-          { value: "bytedance/seedance-2.0", label: "Seedance 2.0" },
-          { value: "minimax/hailuo-2.3", label: "Hailuo 2.3" },
-        ],
+        options: GENERATION_MODELS.map((model) => ({
+          value: model.id,
+          label: `${model.label} (${model.outputType}, ${model.outputFormat.toUpperCase()})`,
+        })),
       },
       { key: "duration", label: "Duration (s)", type: "number_min0" },
       { key: "count", label: "Outputs", type: "number_min1" },
@@ -49,6 +51,8 @@ const NODE_CONFIG: Record<
     label: "Output",
     fields: [
       { key: "outputIndex", label: "Output index", type: "number" },
+      { key: "outputType", label: "Type", type: "readonly" },
+      { key: "outputFormat", label: "Format", type: "readonly" },
     ],
   },
 };
@@ -92,8 +96,39 @@ export function PropertiesPanel() {
   const nd = nodeData;
   const cfg = NODE_CONFIG[nd.nodeType] ?? { label: "Node", fields: [] };
   const inputConns = connections.filter((c) => c.toId === el.id);
+  const generationModel =
+    nd.nodeType === "generate" ? getGenerationModel(nd.properties.model) : null;
+  const fields = cfg.fields.filter(
+    (field) =>
+      !(
+        nd.nodeType === "generate" &&
+        field.key === "duration" &&
+        generationModel &&
+        !generationModel.supportsDuration
+      )
+  );
 
   function setField(key: string, value: string) {
+    if (nd.nodeType === "generate" && key === "model") {
+      const nextModel = getGenerationModel(value);
+      updateNodeProperties(el.id, {
+        ...nd.properties,
+        model: nextModel.id,
+        outputType: nextModel.outputType,
+        outputFormat: nextModel.outputFormat,
+        count: String(normalizeOutputCount(nd.properties.count, nextModel.id)),
+      });
+      return;
+    }
+
+    if (nd.nodeType === "generate" && key === "count") {
+      updateNodeProperties(el.id, {
+        ...nd.properties,
+        count: String(normalizeOutputCount(value, nd.properties.model)),
+      });
+      return;
+    }
+
     updateNodeProperties(el.id, { ...nd.properties, [key]: value });
   }
 
@@ -131,9 +166,39 @@ export function PropertiesPanel() {
         )}
       </div>
 
-      {cfg.fields.length > 0 && (
+      {generationModel && (
+        <div className="space-y-2 px-4 py-3">
+          <div>
+            <span className="mb-1 block text-[11px] font-medium text-neutral-500">
+              Creates
+            </span>
+            <div className="grid grid-cols-2 gap-1 rounded-md border border-neutral-200 bg-neutral-50 p-1">
+              {(["image", "video"] as const).map((type) => (
+                <div
+                  key={type}
+                  className={`rounded px-2 py-1.5 text-center text-[11px] font-medium capitalize ${
+                    generationModel.outputType === type
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-400"
+                  }`}
+                >
+                  {type}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-md border border-neutral-200 px-2.5 py-2 text-[11px] text-neutral-600">
+            Output format:{" "}
+            <span className="font-semibold uppercase text-neutral-900">
+              {generationModel.outputFormat}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {fields.length > 0 && (
         <div className="px-4 py-3 space-y-3">
-          {cfg.fields.map((field) => (
+          {fields.map((field) => (
             <label key={field.key} className="block">
               <span className="mb-1 block text-[11px] font-medium text-neutral-500">
                 {field.label}
@@ -156,10 +221,15 @@ export function PropertiesPanel() {
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
+              ) : field.type === "readonly" ? (
+                <div className="rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-2 text-xs font-medium capitalize text-neutral-700">
+                  {nd.properties[field.key] || "Auto"}
+                </div>
               ) : field.type === "number" || field.type === "number_min0" || field.type === "number_min1" ? (
                 <input
                   type="number"
                   min={field.type === "number_min0" ? "0" : field.type === "number_min1" ? "1" : undefined}
+                  max={field.key === "count" && generationModel ? generationModel.maxOutputs : undefined}
                   value={nd.properties[field.key] ?? ""}
                   onChange={(e) => setField(field.key, e.target.value)}
                   className={inputCls}

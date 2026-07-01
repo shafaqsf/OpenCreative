@@ -45,6 +45,7 @@ import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
+import { getGenerationModel, normalizeOutputCount } from "@/lib/canvas/generation-models";
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import { useRegisterCommands } from "@/lib/command-palette/context";
 import type { Project } from "@/lib/projects/service";
@@ -96,6 +97,7 @@ function ProjectCanvasInner({
     elements,
     connections,
     updateNodeStatus,
+    updateNodeProperties,
     addElements,
     removeElements,
     selectedIds,
@@ -130,7 +132,8 @@ function ProjectCanvasInner({
 
     for (const gen of nowElements) {
       if (gen.type !== "generate" || !gen.nodeData) continue;
-      const count = Math.max(1, parseInt(gen.nodeData.properties.count || "1", 10));
+      const model = getGenerationModel(gen.nodeData.properties.model);
+      const count = normalizeOutputCount(gen.nodeData.properties.count, model.id);
       const existingOut: string[] = [];
 
       let outConn = nowConnections.filter((c) => c.fromId === gen.id);
@@ -138,6 +141,19 @@ function ProjectCanvasInner({
         const t = nowElements.find((e) => e.id === c.toId);
         if (t?.type === "output") existingOut.push(c.toId);
       }
+
+      existingOut.slice(0, count).forEach((outId, index) => {
+        const out = nowElements.find((el) => el.id === outId);
+        if (!out?.nodeData) return;
+        const properties = {
+          ...out.nodeData.properties,
+          outputIndex: String(index),
+          outputType: model.outputType,
+          outputFormat: model.outputFormat,
+        };
+        updateNodeProperties(out.id, properties);
+        out.nodeData = { ...out.nodeData, properties };
+      });
 
       if (existingOut.length > count) {
         const toRemove = existingOut.slice(count);
@@ -153,6 +169,8 @@ function ProjectCanvasInner({
           const outY = genBounds.y + i * 80;
           const outEl = newNode("output", outX, outY);
           outEl.nodeData!.properties.outputIndex = String(i);
+          outEl.nodeData!.properties.outputType = model.outputType;
+          outEl.nodeData!.properties.outputFormat = model.outputFormat;
           const outConnection = { id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id };
           outputElements.push(outEl);
           outputConnections.push(outConnection);
@@ -219,14 +237,17 @@ function ProjectCanvasInner({
             .filter(Boolean)
             .join("\n");
           const prompt = inputPrompt.trim();
-          const count = parseInt(node.nodeData.properties.count || "1", 10);
+          const selectedModel = getGenerationModel(node.nodeData.properties.model);
+          const count = normalizeOutputCount(node.nodeData.properties.count, selectedModel.id);
           const allUrls: string[] = [];
           let lastError: string | undefined;
 
           for (let i = 0; i < count; i++) {
             const result = await runGeneration({
               prompt,
-              model: node.nodeData.properties.model || "kwaivgi/kling-v3.0-pro",
+              model: selectedModel.id,
+              outputType: selectedModel.outputType,
+              outputFormat: selectedModel.outputFormat,
               imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
             });
             if (result.url) {
@@ -286,7 +307,7 @@ function ProjectCanvasInner({
     } finally {
       setRunning(false);
     }
-  }, [elements, connections, running, addElements, removeElements, updateNodeStatus, addToast]);
+  }, [elements, connections, running, addElements, removeElements, updateNodeProperties, updateNodeStatus, addToast]);
 
   const commands = useMemo(
     () => [
