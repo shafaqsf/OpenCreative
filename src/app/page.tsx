@@ -2,11 +2,9 @@ import { Sidebar } from "@/components/dashboard/sidebar";
 
 export default function Home() {
   return (
-    <div className="flex h-dvh w-dvw bg-zinc-950 text-zinc-50">
+    <div className="flex h-dvh w-dvw overflow-hidden bg-white text-neutral-900">
       <Sidebar />
-      <main className="flex flex-1 items-center justify-center">
-        <span className="text-sm text-zinc-700">Canvas area</span>
-      </main>
+      <main className="canvas-grid flex-1" />
     </div>
   );
 }

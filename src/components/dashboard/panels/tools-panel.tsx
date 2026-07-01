@@ -1,31 +1,51 @@
 "use client";
 
+import { useState } from "react";
+import {
+  MousePointer2,
+  Square,
+  Circle,
+  Minus,
+  ArrowRight,
+  Type,
+  PenLine,
+  type LucideIcon,
+} from "lucide-react";
 import { Panel } from "./panel";
 
-const tools = [
-  { id: "select", label: "Select", shortcut: "V" },
-  { id: "draw", label: "Draw", shortcut: "D" },
-  { id: "rectangle", label: "Rectangle", shortcut: "R" },
-  { id: "ellipse", label: "Ellipse", shortcut: "O" },
-  { id: "line", label: "Line", shortcut: "L" },
-  { id: "text", label: "Text", shortcut: "T" },
-] as const;
+const tools: { id: string; label: string; Icon: LucideIcon; shortcut: string }[] = [
+  { id: "select", label: "Select", Icon: MousePointer2, shortcut: "V" },
+  { id: "rectangle", label: "Rectangle", Icon: Square, shortcut: "R" },
+  { id: "ellipse", label: "Ellipse", Icon: Circle, shortcut: "O" },
+  { id: "line", label: "Line", Icon: Minus, shortcut: "L" },
+  { id: "arrow", label: "Arrow", Icon: ArrowRight, shortcut: "A" },
+  { id: "text", label: "Text", Icon: Type, shortcut: "T" },
+  { id: "draw", label: "Draw", Icon: PenLine, shortcut: "D" },
+];
 
 export function ToolsPanel() {
+  const [active, setActive] = useState("select");
+
   return (
     <Panel title="Tools">
-      <div className="space-y-1">
-        {tools.map((tool) => (
-          <button
-            key={tool.id}
-            className="flex w-full items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-zinc-800 transition-colors"
-          >
-            <span>{tool.label}</span>
-            <kbd className="rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-xs text-zinc-500">
-              {tool.shortcut}
-            </kbd>
-          </button>
-        ))}
+      <div className="grid grid-cols-4 gap-1">
+        {tools.map(({ id, label, Icon, shortcut }) => {
+          const isActive = active === id;
+          return (
+            <button
+              key={id}
+              onClick={() => setActive(id)}
+              title={`${label} — ${shortcut}`}
+              className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-xs transition-colors ${
+                isActive
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+              }`}
+            >
+              <Icon className="size-4" strokeWidth={1.75} />
+            </button>
+          );
+        })}
       </div>
     </Panel>
   );
