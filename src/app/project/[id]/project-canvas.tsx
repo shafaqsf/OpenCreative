@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ResizableHandle,
+  useResizablePanel,
+} from "@/components/ui/resizable-handle";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -110,6 +114,8 @@ function ProjectCanvasInner({
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
+  const leftPanel = useResizablePanel("left", 224, { min: 180, max: 360 });
+  const rightPanel = useResizablePanel("right", 256, { min: 200, max: 400 });
 
   useKeyboardShortcuts();
 
@@ -547,9 +553,16 @@ function ProjectCanvasInner({
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-56 overflow-y-auto border-r border-neutral-200 bg-neutral-50">
+        <aside
+          className="relative overflow-y-auto border-r border-neutral-200 bg-neutral-50"
+          style={{ width: leftPanel.width }}
+        >
           <ToolsPanel />
           <LayersPanel />
+          <ResizableHandle
+            onPointerDown={leftPanel.startResize(1)}
+            className="right-0 top-0 h-full"
+          />
         </aside>
 
         <main className="relative flex-1 overflow-hidden bg-neutral-100">
@@ -559,7 +572,14 @@ function ProjectCanvasInner({
           <MiniMap />
         </main>
 
-        <aside className="w-64 overflow-y-auto border-l border-neutral-200 bg-white">
+        <aside
+          className="relative overflow-y-auto border-l border-neutral-200 bg-white"
+          style={{ width: rightPanel.width }}
+        >
+          <ResizableHandle
+            onPointerDown={rightPanel.startResize(-1)}
+            className="left-0 top-0 h-full"
+          />
           <PropertiesPanel />
         </aside>
       </div>
