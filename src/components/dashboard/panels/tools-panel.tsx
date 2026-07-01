@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   MousePointer2,
   Square,
@@ -12,8 +11,15 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
+import { useCanvas } from "@/lib/canvas/context";
+import type { ToolId } from "@/types/canvas";
 
-const tools: { id: string; label: string; Icon: LucideIcon; shortcut: string }[] = [
+const tools: {
+  id: ToolId;
+  label: string;
+  Icon: LucideIcon;
+  shortcut: string;
+}[] = [
   { id: "select", label: "Select", Icon: MousePointer2, shortcut: "V" },
   { id: "rectangle", label: "Rectangle", Icon: Square, shortcut: "R" },
   { id: "ellipse", label: "Ellipse", Icon: Circle, shortcut: "O" },
@@ -24,17 +30,17 @@ const tools: { id: string; label: string; Icon: LucideIcon; shortcut: string }[]
 ];
 
 export function ToolsPanel() {
-  const [active, setActive] = useState("select");
+  const { activeTool, setActiveTool } = useCanvas();
 
   return (
     <Panel title="Tools">
       <div className="grid grid-cols-4 gap-1">
         {tools.map(({ id, label, Icon, shortcut }) => {
-          const isActive = active === id;
+          const isActive = activeTool === id;
           return (
             <button
               key={id}
-              onClick={() => setActive(id)}
+              onClick={() => setActiveTool(id)}
               title={`${label} — ${shortcut}`}
               className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-xs transition-colors ${
                 isActive
