@@ -136,7 +136,7 @@ export function PropertiesPanel() {
         <div className="px-4 py-3 space-y-3">
           {cfg.fields.map((field) => (
             <label key={field.key} className="block">
-              <span className="mb-1 block text-[11px] font-medium text-neutral-500 uppercase tracking-wider">
+              <span className="mb-1 block text-[11px] font-medium text-neutral-500">
                 {field.label}
               </span>
               {field.type === "textarea" ? (
@@ -181,7 +181,7 @@ export function PropertiesPanel() {
 
       {nd.nodeType === "source" && (
         <div className="px-4 py-3">
-          <span className="mb-1 block text-[11px] font-medium text-neutral-500 uppercase tracking-wider">Upload</span>
+          <span className="mb-1 block text-[11px] font-medium text-neutral-500">Upload</span>
           <input
             ref={fileInputRef}
             type="file"
@@ -194,7 +194,7 @@ export function PropertiesPanel() {
 
       {(nd.outputUrls && nd.outputUrls.length > 0) && (
         <div className="px-4 py-3 flex-1 overflow-y-auto">
-          <span className="mb-2 block text-[11px] font-medium text-neutral-500 uppercase tracking-wider">
+          <span className="mb-2 block text-[11px] font-medium text-neutral-500">
             Outputs ({nd.outputUrls.length})
           </span>
           <div className="space-y-1.5">

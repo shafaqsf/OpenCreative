@@ -126,8 +126,8 @@ function ProjectCanvasInner({
     if (running) return;
     setRunning(true);
 
-    const nowElements = elements;
-    const nowConnections = connections;
+    let nowElements = [...elements];
+    let nowConnections = [...connections];
 
     for (const gen of nowElements) {
       if (gen.type !== "generate" || !gen.nodeData) continue;
@@ -143,6 +143,10 @@ function ProjectCanvasInner({
       if (existingOut.length > count) {
         const toRemove = existingOut.slice(count);
         removeElements(toRemove);
+        nowElements = nowElements.filter((el) => !toRemove.includes(el.id));
+        nowConnections = nowConnections.filter(
+          (conn) => !toRemove.includes(conn.fromId) && !toRemove.includes(conn.toId)
+        );
       } else if (existingOut.length < count) {
         const genBounds = { x: gen.x, y: gen.y, w: gen.width, h: gen.height };
         for (let i = existingOut.length; i < count; i++) {
@@ -152,21 +156,23 @@ function ProjectCanvasInner({
           outEl.nodeData!.properties.outputIndex = String(i);
           addElement(outEl);
           addConnection(gen.id, outEl.id);
+          nowElements.push(outEl);
+          nowConnections.push({ id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id });
         }
       }
     }
 
     const getInputs = (nodeId: string) =>
-      connections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
+      nowConnections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
 
     const getOutputs = (nodeId: string) =>
-      connections.filter((c) => c.fromId === nodeId).map((c) => c.toId);
+      nowConnections.filter((c) => c.fromId === nodeId).map((c) => c.toId);
 
-    const getNode = (id: string) => elements.find((el) => el.id === id);
+    const getNode = (id: string) => nowElements.find((el) => el.id === id);
 
     let anyError = false;
     try {
-      const graph = elements.filter((el) => el.nodeData);
+      const graph = nowElements.filter((el) => el.nodeData);
       const done = new Set<string>();
       const queue: string[] = [];
 
@@ -204,13 +210,22 @@ function ProjectCanvasInner({
           const sourceUrl = inputIds
             .map((i) => getNode(i)?.nodeData?.outputUrl)
             .find(Boolean);
+          const inputPrompt = inputIds
+            .map((i) => getNode(i)?.nodeData)
+            .filter((node) => node?.nodeType === "prompt")
+            .map((node) => node?.properties.content)
+            .filter(Boolean)
+            .join("\n");
+          const prompt = [inputPrompt, node.nodeData.properties.prompt]
+            .filter(Boolean)
+            .join("\n\n");
           const count = parseInt(node.nodeData.properties.count || "1", 10);
           const allUrls: string[] = [];
           let lastError: string | undefined;
 
           for (let i = 0; i < count; i++) {
             const result = await runGeneration({
-              prompt: node.nodeData.properties.prompt || "",
+              prompt,
               model: node.nodeData.properties.model || "kwaivgi/kling-v3.0-pro",
               imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
             });

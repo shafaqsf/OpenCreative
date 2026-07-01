@@ -100,7 +100,7 @@ export function CommandPalette() {
           ) : (
             grouped.map(([section, cmds]) => (
               <div key={section}>
-                <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
+                <div className="px-4 py-1.5 text-[10px] font-semibold text-neutral-400">
                   {section}
                 </div>
                 {cmds.map((cmd) => {
