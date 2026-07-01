@@ -44,6 +44,7 @@ type CanvasContextValue = {
   toggleSnapToGrid: () => void;
   toggleShowGrid: () => void;
   addElement: (el: CanvasElement) => void;
+  addElements: (newElements: CanvasElement[], newConnections?: Connection[]) => void;
   updateElement: (id: string, patch: Partial<CanvasElement>) => void;
   removeElements: (ids: string[]) => void;
   selectElements: (ids: string[]) => void;
@@ -180,6 +181,30 @@ export function CanvasProvider({
         ...prev,
         elements: [...prev.elements, el],
       }));
+    },
+    [setHistory]
+  );
+
+  const addElements = useCallback(
+    (newElements: CanvasElement[], newConnections: Connection[] = []) => {
+      if (newElements.length === 0 && newConnections.length === 0) return;
+      setHistory((prev) => {
+        const seenConnections = new Set(
+          prev.connections.map((conn) => `${conn.fromId}:${conn.toId}`)
+        );
+        const dedupedConnections = newConnections.filter((conn) => {
+          const key = `${conn.fromId}:${conn.toId}`;
+          if (seenConnections.has(key)) return false;
+          seenConnections.add(key);
+          return true;
+        });
+
+        return {
+          ...prev,
+          elements: [...prev.elements, ...newElements],
+          connections: [...prev.connections, ...dedupedConnections],
+        };
+      });
     },
     [setHistory]
   );
@@ -326,9 +351,9 @@ export function CanvasProvider({
       20,
       20
     );
-    clones.forEach((el) => addElement(el));
+    addElements(clones);
     selectElements(clones.map((el) => el.id));
-  }, [present.elements, selectedIds, addElement, selectElements]);
+  }, [present.elements, selectedIds, addElements, selectElements]);
 
   const selectAll = useCallback(() => {
     selectElements(present.elements.map((el) => el.id));
@@ -537,6 +562,7 @@ export function CanvasProvider({
       toggleSnapToGrid,
       toggleShowGrid,
       addElement,
+      addElements,
       updateElement,
       removeElements,
       selectElements,
@@ -574,6 +600,7 @@ export function CanvasProvider({
       snapToGrid,
       showGrid,
       addElement,
+      addElements,
       updateElement,
       removeElements,
       selectElements,

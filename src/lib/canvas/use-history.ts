@@ -32,10 +32,16 @@ export function useHistory<T>(
 
   const set = useCallback(
     (updater: T | ((prev: T) => T)) => {
-      const next = typeof updater === "function" ? (updater as (prev: T) => T)(historyStateRef.current.present) : updater;
-      if (next === historyStateRef.current.present) return;
+      const current = historyStateRef.current.present;
+      const next = typeof updater === "function" ? (updater as (prev: T) => T)(current) : updater;
+      if (next === current) return;
+      historyStateRef.current = {
+        ...historyStateRef.current,
+        present: next,
+        future: [],
+      };
       setPast((prev) => {
-        const nextPast = [...prev, historyStateRef.current.present];
+        const nextPast = [...prev, current];
         if (nextPast.length > max) nextPast.shift();
         return nextPast;
       });
@@ -47,8 +53,13 @@ export function useHistory<T>(
 
   const replace = useCallback(
     (updater: T | ((prev: T) => T)) => {
-      const next = typeof updater === "function" ? (updater as (prev: T) => T)(historyStateRef.current.present) : updater;
-      if (next === historyStateRef.current.present) return;
+      const current = historyStateRef.current.present;
+      const next = typeof updater === "function" ? (updater as (prev: T) => T)(current) : updater;
+      if (next === current) return;
+      historyStateRef.current = {
+        ...historyStateRef.current,
+        present: next,
+      };
       setPresent(next);
     },
     []

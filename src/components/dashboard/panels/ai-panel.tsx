@@ -71,8 +71,7 @@ export function AIPanel({
     camera,
     selectedIds,
     activeTool,
-    addElement,
-    addConnection,
+    addElements,
     removeElements,
     duplicateSelection,
     renameElement,
@@ -193,12 +192,12 @@ export function AIPanel({
           };
           return el;
         });
-        created.forEach(addElement);
-        action.connections?.forEach((connection) => {
+        const createdConnections = (action.connections ?? []).flatMap((connection) => {
           const from = created[connection.from];
           const to = created[connection.to];
-          if (from && to) addConnection(from.id, to.id);
+          return from && to ? [{ id: uid(), fromId: from.id, toId: to.id }] : [];
         });
+        addElements(created, createdConnections);
         addToast({
           title: "Agent updated canvas",
           message: `Created ${created.length} node${created.length === 1 ? "" : "s"}.`,

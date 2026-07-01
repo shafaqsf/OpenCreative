@@ -76,6 +76,7 @@ export function Canvas() {
     setActiveTool,
     snapToGrid,
     showGrid,
+    addElements,
   } = useCanvas();
   const { addToast } = useToast();
 
@@ -295,12 +296,9 @@ export function Canvas() {
 
       if (drag.kind === "draw") {
         const world = snapWorld(getWorldPos(e));
-        setDrag((prev) => {
-          if (prev.kind !== "draw") return prev;
-          const points = [...(prev.el.points ?? []), world];
-          updateElement(prev.el.id, { points });
-          return { ...prev, el: { ...prev.el, points } };
-        });
+        const points = [...(drag.el.points ?? []), world];
+        updateElement(drag.el.id, { points });
+        setDrag({ ...drag, el: { ...drag.el, points } });
         return;
       }
 
@@ -423,8 +421,7 @@ export function Canvas() {
         const template = templates.find((item) => item.id === templateId);
         if (!template) return;
         const instance = instantiateTemplateAt(template, world);
-        instance.elements.forEach(addElement);
-        instance.connections.forEach((conn) => addConnection(conn.fromId, conn.toId));
+        addElements(instance.elements, instance.connections);
         selectElements(instance.elements.map((el) => el.id));
         setActiveTool("select");
         addToast({
@@ -459,7 +456,7 @@ export function Canvas() {
       }
       setActiveTool("select");
     },
-    [camera, addElement, addConnection, selectElements, setActiveTool, addToast]
+    [camera, addElement, addElements, selectElements, setActiveTool, addToast]
   );
 
   const cursor =
@@ -512,7 +509,7 @@ export function Canvas() {
         points: el.points?.map((p) => ({ x: p.x + offsetX, y: p.y + offsetY })),
       };
     });
-    clones.forEach(addElement);
+    addElements(clones);
     selectElements(clones.map((el) => el.id));
     addToast({ title: "Pasted", message: `${clones.length} item${clones.length === 1 ? "" : "s"} pasted.`, variant: "info", duration: 2000 });
   }

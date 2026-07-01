@@ -98,8 +98,7 @@ function ProjectCanvasInner({
     elements,
     connections,
     updateNodeStatus,
-    addElement,
-    addConnection,
+    addElements,
     removeElements,
     selectedIds,
     setActiveTool,
@@ -128,6 +127,8 @@ function ProjectCanvasInner({
 
     let nowElements = [...elements];
     let nowConnections = [...connections];
+    const outputElements: typeof elements = [];
+    const outputConnections: typeof connections = [];
 
     for (const gen of nowElements) {
       if (gen.type !== "generate" || !gen.nodeData) continue;
@@ -154,13 +155,16 @@ function ProjectCanvasInner({
           const outY = genBounds.y + i * 80;
           const outEl = newNode("output", outX, outY);
           outEl.nodeData!.properties.outputIndex = String(i);
-          addElement(outEl);
-          addConnection(gen.id, outEl.id);
+          const outConnection = { id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id };
+          outputElements.push(outEl);
+          outputConnections.push(outConnection);
           nowElements.push(outEl);
-          nowConnections.push({ id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id });
+          nowConnections.push(outConnection);
         }
       }
     }
+
+    addElements(outputElements, outputConnections);
 
     const getInputs = (nodeId: string) =>
       nowConnections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
@@ -286,7 +290,7 @@ function ProjectCanvasInner({
     } finally {
       setRunning(false);
     }
-  }, [elements, connections, running, addElement, addConnection, removeElements, updateNodeStatus, addToast]);
+  }, [elements, connections, running, addElements, removeElements, updateNodeStatus, addToast]);
 
   const commands = useMemo(
     () => [
