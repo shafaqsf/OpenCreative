@@ -40,6 +40,7 @@ import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
 import { AlignToolbar } from "@/components/canvas/align-toolbar";
 import { MiniMap } from "@/components/canvas/mini-map";
+import { OutputGalleryButton } from "@/components/canvas/output-gallery";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { LayersPanel } from "@/components/dashboard/panels/layers-panel";
@@ -537,6 +538,7 @@ function ProjectCanvasInner({
               Saving…
             </span>
           )}
+          <OutputGalleryButton />
           <button
             onClick={handleRun}
             disabled={running}
