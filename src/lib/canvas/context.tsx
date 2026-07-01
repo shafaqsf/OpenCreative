@@ -26,6 +26,7 @@ import {
   NODE_CONFIG,
   isNodeTool,
 } from "@/types/canvas";
+import { useHistory } from "./use-history";
 
 type CanvasContextValue = {
   elements: CanvasElement[];
@@ -56,6 +57,11 @@ type CanvasContextValue = {
     error?: string,
     outputUrls?: string[]
   ) => void;
+
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 };
 
 const CanvasContext = createContext<CanvasContextValue | null>(null);
@@ -94,18 +100,23 @@ export function CanvasProvider({
   onChange?: (state: WorkflowState) => void;
 }) {
   const initialState = initial ?? loadFromStorage();
-  const [elements, setElements] = useState<CanvasElement[]>(
-    initialState.elements
+  const history = useHistory(
+    {
+      elements: initialState.elements,
+      connections: initialState.connections,
+    },
+    { max: 100 }
   );
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolId>("select");
   const [camera, setCameraState] = useState<Camera>(initialState.camera);
-  const [connections, setConnections] = useState<Connection[]>(
-    initialState.connections
-  );
   const [mounted, setMounted] = useState(false);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  const elements = history.present.elements;
+  const connections = history.present.connections;
 
   useEffect(() => {
     setMounted(true);
@@ -121,27 +132,41 @@ export function CanvasProvider({
     }
   }, [elements, camera, connections, mounted]);
 
-  const addElement = useCallback((el: CanvasElement) => {
-    setElements((prev) => [...prev, el]);
-  }, []);
+  const addElement = useCallback(
+    (el: CanvasElement) => {
+      history.set((prev) => ({
+        ...prev,
+        elements: [...prev.elements, el],
+      }));
+    },
+    [history.set]
+  );
 
   const updateElement = useCallback(
     (id: string, patch: Partial<CanvasElement>) => {
-      setElements((prev) =>
-        prev.map((el) => (el.id === id ? { ...el, ...patch } : el))
-      );
+      history.set((prev) => ({
+        ...prev,
+        elements: prev.elements.map((el) =>
+          el.id === id ? { ...el, ...patch } : el
+        ),
+      }));
     },
-    []
+    [history.set]
   );
 
-  const removeElements = useCallback((ids: string[]) => {
-    const idSet = new Set(ids);
-    setElements((prev) => prev.filter((el) => !idSet.has(el.id)));
-    setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
-    setConnections((prev) =>
-      prev.filter((c) => !idSet.has(c.fromId) && !idSet.has(c.toId))
-    );
-  }, []);
+  const removeElements = useCallback(
+    (ids: string[]) => {
+      const idSet = new Set(ids);
+      history.set((prev) => ({
+        elements: prev.elements.filter((el) => !idSet.has(el.id)),
+        connections: prev.connections.filter(
+          (c) => !idSet.has(c.fromId) && !idSet.has(c.toId)
+        ),
+      }));
+      setSelectedIds((prev) => prev.filter((id) => !idSet.has(id)));
+    },
+    [history.set]
+  );
 
   const selectElements = useCallback(
     (ids: string[]) => setSelectedIds(ids),
@@ -150,24 +175,29 @@ export function CanvasProvider({
 
   const toggleSelection = useCallback((id: string) => {
     setSelectedIds((prev) =>
-      prev.includes(id)
-        ? prev.filter((x) => x !== id)
-        : [...prev, id]
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }, []);
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
 
-  const renameElement = useCallback((id: string, label: string) => {
-    setElements((prev) =>
-      prev.map((el) => (el.id === id ? { ...el, customLabel: label } : el))
-    );
-  }, []);
+  const renameElement = useCallback(
+    (id: string, label: string) => {
+      history.set((prev) => ({
+        ...prev,
+        elements: prev.elements.map((el) =>
+          el.id === id ? { ...el, customLabel: label } : el
+        ),
+      }));
+    },
+    [history.set]
+  );
 
   const moveElements = useCallback(
     (ids: string[], dx: number, dy: number) => {
-      setElements((prev) =>
-        prev.map((el) => {
+      history.set((prev) => ({
+        ...prev,
+        elements: prev.elements.map((el) => {
           if (!ids.includes(el.id)) return el;
           if (el.points) {
             return {
@@ -176,10 +206,10 @@ export function CanvasProvider({
             };
           }
           return { ...el, x: el.x + dx, y: el.y + dy };
-        })
-      );
+        }),
+      }));
     },
-    []
+    [history.set]
   );
 
   const setCamera = useCallback(
@@ -189,55 +219,77 @@ export function CanvasProvider({
     []
   );
 
-  const bringToFront = useCallback((id: string) => {
-    setElements((prev) => {
-      const idx = prev.findIndex((el) => el.id === id);
-      if (idx === -1) return prev;
-      const [el] = prev.splice(idx, 1);
-      prev.push(el);
-      return [...prev];
-    });
-  }, []);
+  const bringToFront = useCallback(
+    (id: string) => {
+      history.set((prev) => {
+        const idx = prev.elements.findIndex((el) => el.id === id);
+        if (idx === -1) return prev;
+        const next = [...prev.elements];
+        const [el] = next.splice(idx, 1);
+        next.push(el);
+        return { ...prev, elements: next };
+      });
+    },
+    [history.set]
+  );
 
-  const sendToBack = useCallback((id: string) => {
-    setElements((prev) => {
-      const idx = prev.findIndex((el) => el.id === id);
-      if (idx === -1) return prev;
-      const [el] = prev.splice(idx, 1);
-      prev.unshift(el);
-      return [...prev];
-    });
-  }, []);
+  const sendToBack = useCallback(
+    (id: string) => {
+      history.set((prev) => {
+        const idx = prev.elements.findIndex((el) => el.id === id);
+        if (idx === -1) return prev;
+        const next = [...prev.elements];
+        const [el] = next.splice(idx, 1);
+        next.unshift(el);
+        return { ...prev, elements: next };
+      });
+    },
+    [history.set]
+  );
 
-  const addConnection = useCallback((fromId: string, toId: string) => {
-    setConnections((prev) => {
-      if (prev.some((c) => c.fromId === fromId && c.toId === toId))
-        return prev;
-      return [...prev, { id: uid(), fromId, toId }];
-    });
-  }, []);
+  const addConnection = useCallback(
+    (fromId: string, toId: string) => {
+      history.set((prev) => {
+        if (prev.connections.some((c) => c.fromId === fromId && c.toId === toId))
+          return prev;
+        return {
+          ...prev,
+          connections: [...prev.connections, { id: uid(), fromId, toId }],
+        };
+      });
+    },
+    [history.set]
+  );
 
-  const removeConnection = useCallback((id: string) => {
-    setConnections((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  const removeConnection = useCallback(
+    (id: string) => {
+      history.set((prev) => ({
+        ...prev,
+        connections: prev.connections.filter((c) => c.id !== id),
+      }));
+    },
+    [history.set]
+  );
 
   const updateNodeProperties = useCallback(
     (id: string, properties: Record<string, string>) => {
-      setElements((prev) =>
-        prev.map((el) =>
+      history.set((prev) => ({
+        ...prev,
+        elements: prev.elements.map((el) =>
           el.id === id && el.nodeData
             ? { ...el, nodeData: { ...el.nodeData, properties } }
             : el
-        )
-      );
+        ),
+      }));
     },
-    []
+    [history.set]
   );
 
   const updateNodeStatus = useCallback(
     (id: string, status: NodeStatus, outputUrl?: string, error?: string, outputUrls?: string[]) => {
-      setElements((prev) =>
-        prev.map((el) =>
+      history.set((prev) => ({
+        ...prev,
+        elements: prev.elements.map((el) =>
           el.id === id && el.nodeData
             ? {
                 ...el,
@@ -250,10 +302,10 @@ export function CanvasProvider({
                 },
               }
             : el
-        )
-      );
+        ),
+      }));
     },
-    []
+    [history.set]
   );
 
   const value = useMemo<CanvasContextValue>(
@@ -279,6 +331,10 @@ export function CanvasProvider({
       removeConnection,
       updateNodeProperties,
       updateNodeStatus,
+      undo: history.undo,
+      redo: history.redo,
+      canUndo: history.canUndo,
+      canRedo: history.canRedo,
     }),
     [
       elements,
@@ -301,6 +357,10 @@ export function CanvasProvider({
       removeConnection,
       updateNodeProperties,
       updateNodeStatus,
+      history.undo,
+      history.redo,
+      history.canUndo,
+      history.canRedo,
     ]
   );
 

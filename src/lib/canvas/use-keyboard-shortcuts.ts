@@ -18,11 +18,21 @@ const SHORTCUTS: Record<string, ToolId> = {
 };
 
 export function useKeyboardShortcuts() {
-  const { setActiveTool, removeElements, selectedIds } = useCanvas();
+  const { setActiveTool, removeElements, selectedIds, undo, redo, canUndo, canRedo } = useCanvas();
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (canRedo) redo();
+        } else {
+          if (canUndo) undo();
+        }
+        return;
+      }
 
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedIds.length > 0) {
@@ -40,5 +50,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setActiveTool, removeElements, selectedIds]);
+  }, [setActiveTool, removeElements, selectedIds, undo, redo, canUndo, canRedo]);
 }
