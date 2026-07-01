@@ -5,7 +5,9 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -26,27 +28,45 @@ type CommandPaletteContextValue = {
   query: string;
   setQuery: (query: string) => void;
   commands: Command[];
-  register: (commands: Command[]) => () => void;
+  register: (id: string, commands: Command[]) => void;
+  unregister: (id: string) => void;
 };
 
 const CommandPaletteContext = createContext<CommandPaletteContextValue | null>(null);
 
+function commandIdsEqual(a: Command[], b: Command[]) {
+  if (a.length !== b.length) return false;
+  return a.every((cmd, i) => cmd.id === b[i].id);
+}
+
 export function CommandPaletteProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [commands, setCommands] = useState<Command[]>([]);
+  const [commandMap, setCommandMap] = useState<Map<string, Command[]>>(new Map());
 
-  const register = useCallback((next: Command[]) => {
-    setCommands((prev) => {
-      const existing = new Set(prev.map((c) => c.id));
-      const toAdd = next.filter((c) => !existing.has(c.id));
-      return [...prev, ...toAdd];
+  const register = useCallback((id: string, commands: Command[]) => {
+    setCommandMap((prev) => {
+      const existing = prev.get(id);
+      if (existing && commandIdsEqual(existing, commands)) return prev;
+      const next = new Map(prev);
+      next.set(id, commands);
+      return next;
     });
-    return () => {
-      const ids = new Set(next.map((c) => c.id));
-      setCommands((prev) => prev.filter((c) => !ids.has(c.id)));
-    };
   }, []);
+
+  const unregister = useCallback((id: string) => {
+    setCommandMap((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const commands = useMemo(
+    () => Array.from(commandMap.values()).flat(),
+    [commandMap]
+  );
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -63,8 +83,8 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ open, setOpen, query, setQuery, commands, register }),
-    [open, query, commands, register]
+    () => ({ open, setOpen, query, setQuery, commands, register, unregister }),
+    [open, query, commands, register, unregister]
   );
 
   return (
@@ -82,8 +102,17 @@ export function useCommandPalette() {
 }
 
 export function useRegisterCommands(commands: Command[]) {
-  const { register } = useCommandPalette();
+  const { register, unregister } = useCommandPalette();
+  const id = useId();
+  const isFirst = useRef(true);
+
   useEffect(() => {
-    return register(commands);
-  }, [commands, register]);
+    register(id, commands);
+  }, [commands, id, register]);
+
+  useEffect(() => {
+    return () => {
+      unregister(id);
+    };
+  }, [id, unregister]);
 }
