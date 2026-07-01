@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -62,30 +61,27 @@ function loadFromStorage(): { elements: CanvasElement[]; camera: Camera } {
 }
 
 export function CanvasProvider({ children }: { children: ReactNode }) {
-  const [elements, setElements] = useState<CanvasElement[]>([]);
+  const [elements, setElements] = useState<CanvasElement[]>(() =>
+    loadFromStorage().elements
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeTool, setActiveTool] = useState<ToolId>("select");
-  const [camera, setCameraState] = useState<Camera>({
-    x: 0,
-    y: 0,
-    zoom: 1,
-  });
-  const hydrated = useRef(false);
+  const [camera, setCameraState] = useState<Camera>(() =>
+    loadFromStorage().camera
+  );
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const { elements: els, camera: cam } = loadFromStorage();
-    setElements(els);
-    setCameraState(cam);
-    hydrated.current = true;
+    setMounted(true);
   }, []);
 
   useEffect(() => {
-    if (!hydrated.current) return;
+    if (!mounted) return;
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ elements, camera })
     );
-  }, [elements, camera]);
+  }, [elements, camera, mounted]);
 
   const addElement = useCallback((el: CanvasElement) => {
     setElements((prev) => [...prev, el]);
@@ -202,6 +198,14 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
       sendToBack,
     ]
   );
+
+  if (!mounted) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-white text-neutral-400">
+        <span className="text-xs">Loading canvas…</span>
+      </div>
+    );
+  }
 
   return (
     <CanvasContext.Provider value={value}>{children}</CanvasContext.Provider>

@@ -8,7 +8,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import { useCanvas, newElement } from "@/lib/canvas/context";
-import { screenToWorld } from "@/lib/canvas/geometry";
+import { screenToWorld, worldToScreen } from "@/lib/canvas/geometry";
 import { getElementAtPoint } from "@/lib/canvas/hit-test";
 import { Shape } from "./shape";
 import { SelectionOverlay } from "./selection-overlay";
@@ -30,10 +30,6 @@ type DragMode =
       kind: "move";
       start: Point;
       ids: string[];
-    }
-  | {
-      kind: "text";
-      el: CanvasElement;
     };
 
 export function Canvas() {
@@ -53,10 +49,12 @@ export function Canvas() {
   } = useCanvas();
 
   const svgRef = useRef<SVGSVGElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState<DragMode>({ kind: "none" });
   const [marquee, setMarquee] = useState<{ start: Point; end: Point } | null>(
     null
   );
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
   const getMousePos = useCallback((e: ReactPointerEvent) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -107,7 +105,7 @@ export function Canvas() {
         el.text = "";
         addElement(el);
         selectElements([el.id]);
-        setDrag({ kind: "text", el });
+        setEditingTextId(el.id);
         return;
       }
 
@@ -200,16 +198,6 @@ export function Canvas() {
         selectElements([drag.el.id]);
       }
     }
-    if (drag.kind === "text") {
-      const el = drag.el;
-      const userInput = window.prompt("Enter text:", el.text || "");
-      if (userInput === null || userInput.trim() === "") {
-        removeElements([el.id]);
-      } else {
-        updateElement(el.id, { text: userInput });
-        selectElements([el.id]);
-      }
-    }
     if (marquee) {
       const minX = Math.min(marquee.start.x, marquee.end.x);
       const minY = Math.min(marquee.start.y, marquee.end.y);
@@ -228,7 +216,7 @@ export function Canvas() {
     }
     setDrag({ kind: "none" });
     setMarquee(null);
-  }, [drag, marquee, removeElements, selectElements, updateElement, elements]);
+  }, [drag, marquee, removeElements, selectElements, elements]);
 
   const onWheel = useCallback(
     (e: ReactWheelEvent<SVGSVGElement>) => {
@@ -257,17 +245,36 @@ export function Canvas() {
         ? "default"
         : "crosshair";
 
+  const editingEl = editingTextId
+    ? elements.find((el) => el.id === editingTextId)
+    : null;
+  const editingScreen = editingEl
+    ? worldToScreen({ x: editingEl.x, y: editingEl.y }, camera)
+    : null;
+
+  function commitText(value: string) {
+    if (!editingTextId) return;
+    if (value.trim() === "") {
+      removeElements([editingTextId]);
+    } else {
+      updateElement(editingTextId, { text: value });
+      selectElements([editingTextId]);
+    }
+    setEditingTextId(null);
+  }
+
   return (
-    <svg
-      ref={svgRef}
-      className="canvas-grid h-full w-full touch-none"
-      style={{ cursor }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
-      onWheel={onWheel}
-    >
+    <div className="relative h-full w-full">
+      <svg
+        ref={svgRef}
+        className="canvas-grid h-full w-full touch-none"
+        style={{ cursor }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+        onWheel={onWheel}
+      >
       <g
         style={{
           transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
@@ -296,6 +303,29 @@ export function Canvas() {
         )}
       </g>
     </svg>
+    {editingScreen && editingEl && (
+      <input
+        ref={inputRef}
+        autoFocus
+        defaultValue={editingEl.text || ""}
+        onBlur={(e) => commitText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commitText(e.currentTarget.value);
+          if (e.key === "Escape") {
+            if (!editingEl.text) removeElements([editingEl.id]);
+            setEditingTextId(null);
+          }
+        }}
+        className="absolute z-10 border border-neutral-900 bg-white px-1.5 py-0.5 text-sm text-neutral-900 outline-none"
+        style={{
+          left: editingScreen.x,
+          top: editingScreen.y,
+          minWidth: 80,
+          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        }}
+      />
+    )}
+  </div>
   );
 }
 
