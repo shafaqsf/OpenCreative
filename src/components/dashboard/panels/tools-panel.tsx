@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import {
   MousePointer2,
   Square,
@@ -14,10 +15,21 @@ import {
   FileText,
   Image,
   Sparkles,
+  LayoutTemplate,
+  Plus,
+  Save,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
-import { useCanvas } from "@/lib/canvas/context";
+import { useCanvas, uid } from "@/lib/canvas/context";
+import {
+  getBuiltInTemplates,
+  loadCustomTemplates,
+  saveCustomTemplates,
+  type Template,
+} from "@/lib/canvas/presets";
+import { useToast } from "@/lib/toast/context";
 import type { ToolId } from "@/types/canvas";
 
 const tools: {
@@ -44,8 +56,56 @@ const nodes: { id: ToolId; label: string; Icon: LucideIcon; desc: string }[] = [
   { id: "generate", label: "Generate", Icon: Sparkles, desc: "AI generation step" },
 ];
 
+function applyTemplate(template: Template, addElement: (el: import("@/types/canvas").CanvasElement) => void, addConnection: (fromId: string, toId: string) => void) {
+  const idMap = new Map<string, string>();
+  template.elements.forEach((el) => {
+    const newId = uid();
+    idMap.set(el.id, newId);
+    addElement({ ...el, id: newId });
+  });
+  template.connections.forEach((conn) => {
+    const fromId = idMap.get(conn.fromId) || conn.fromId;
+    const toId = idMap.get(conn.toId) || conn.toId;
+    addConnection(fromId, toId);
+  });
+}
+
 export function ToolsPanel() {
-  const { activeTool, setActiveTool } = useCanvas();
+  const { activeTool, setActiveTool, addElement, addConnection, elements, selectedIds } = useCanvas();
+  const { addToast } = useToast();
+  const [custom, setCustom] = useState<Template[]>(() => loadCustomTemplates());
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+
+  const builtIn = useMemo(() => getBuiltInTemplates(), []);
+
+  function handleSave() {
+    if (!templateName.trim()) return;
+    const selected = elements.filter((el) => selectedIds.includes(el.id));
+    if (selected.length === 0) {
+      addToast({ title: "No selection", message: "Select elements to save as a template.", variant: "warning" });
+      return;
+    }
+    const template: Template = {
+      id: uid(),
+      name: templateName.trim(),
+      description: `${selected.length} element${selected.length === 1 ? "" : "s"}`,
+      elements: selected,
+      connections: [],
+    };
+    const next = [...custom, template];
+    setCustom(next);
+    saveCustomTemplates(next);
+    setTemplateName("");
+    setSaveOpen(false);
+    addToast({ title: "Template saved", message: `"${template.name}" saved.`, variant: "success" });
+  }
+
+  function deleteTemplate(id: string) {
+    const next = custom.filter((t) => t.id !== id);
+    setCustom(next);
+    saveCustomTemplates(next);
+  }
 
   return (
     <>
@@ -101,6 +161,84 @@ export function ToolsPanel() {
           Click a node, then click the canvas to place it. Drag from the right
           edge of one node to the left edge of another to connect.
         </p>
+      </Panel>
+      <Panel title="Templates" defaultOpen={false}>
+        <div className="flex flex-col gap-1">
+          {builtIn.map((template) => (
+            <button
+              key={template.id}
+              onClick={() => {
+                applyTemplate(template, addElement, addConnection);
+                addToast({ title: "Template applied", message: `"${template.name}" added to canvas.`, variant: "success", duration: 2000 });
+              }}
+              className="flex items-center gap-2 rounded-md border border-transparent px-2.5 py-2 text-left text-xs text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+            >
+              <LayoutTemplate className="size-3.5" strokeWidth={1.75} />
+              <div className="leading-tight">
+                <div>{template.name}</div>
+                <div className="text-[10px] opacity-60">{template.description}</div>
+              </div>
+            </button>
+          ))}
+          {custom.map((template) => (
+            <div
+              key={template.id}
+              className="group flex items-center gap-1 rounded-md border border-transparent px-2.5 py-2 text-xs text-neutral-600 hover:bg-neutral-100"
+            >
+              <button
+                onClick={() => {
+                  applyTemplate(template, addElement, addConnection);
+                  addToast({ title: "Template applied", message: `"${template.name}" added to canvas.`, variant: "success", duration: 2000 });
+                }}
+                className="flex flex-1 items-center gap-2 text-left"
+              >
+                <Save className="size-3.5" strokeWidth={1.75} />
+                <div className="leading-tight">
+                  <div>{template.name}</div>
+                  <div className="text-[10px] opacity-60">{template.description}</div>
+                </div>
+              </button>
+              <button
+                onClick={() => deleteTemplate(template.id)}
+                className="p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
+                title="Delete template"
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {saveOpen ? (
+          <div className="mt-2 flex items-center gap-1">
+            <input
+              autoFocus
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSave();
+                if (e.key === "Escape") setSaveOpen(false);
+              }}
+              placeholder="Template name"
+              className="flex-1 rounded-md border border-neutral-200 px-2 py-1 text-[11px] outline-none focus:border-neutral-900"
+            />
+            <button
+              onClick={handleSave}
+              disabled={!templateName.trim()}
+              className="rounded-md bg-neutral-900 p-1 text-white disabled:opacity-50"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setSaveOpen(true)}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-2 py-1.5 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-neutral-100"
+          >
+            <Save className="size-3.5" />
+            Save selection as template
+          </button>
+        )}
       </Panel>
     </>
   );
