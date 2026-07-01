@@ -31,6 +31,30 @@ export type ProjectInput = {
   name: string;
 };
 
+export type GeneratedMedia = {
+  id: string;
+  project_id: string;
+  node_id: string;
+  output_index: number;
+  media_type: "image" | "video";
+  url: string;
+  model: string | null;
+  prompt: string | null;
+  source_url: string | null;
+  created_at: string;
+};
+
+export type GeneratedMediaInput = {
+  projectId: string;
+  nodeId: string;
+  outputIndex: number;
+  mediaType: "image" | "video";
+  url: string;
+  model?: string;
+  prompt?: string;
+  sourceUrl?: string;
+};
+
 export async function listFolders(): Promise<Folder[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -192,6 +216,37 @@ export async function deleteFolder(id: string): Promise<void> {
   const supabase = await createClient();
   const { error } = await supabase.from("folders").delete().eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+export async function listGeneratedMedia(projectId: string): Promise<GeneratedMedia[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("generated_media")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as GeneratedMedia[];
+}
+
+export async function saveGeneratedMedia(input: GeneratedMediaInput): Promise<GeneratedMedia> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("generated_media")
+    .insert({
+      project_id: input.projectId,
+      node_id: input.nodeId,
+      output_index: input.outputIndex,
+      media_type: input.mediaType,
+      url: input.url,
+      model: input.model ?? null,
+      prompt: input.prompt ?? null,
+      source_url: input.sourceUrl ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as GeneratedMedia;
 }
 
 function normalizeWorkflow(raw: unknown): WorkflowState {

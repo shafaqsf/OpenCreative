@@ -1,35 +1,63 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Images, Scale, Download } from "lucide-react";
 import { useCanvas } from "@/lib/canvas/context";
+import { listGeneratedMedia, type GeneratedMedia } from "@/lib/projects/service";
 
 type OutputItem = {
   url: string;
   nodeId: string;
   nodeLabel: string;
   index: number;
+  mediaType: "image" | "video";
+  createdAt?: string;
 };
 
-export function OutputGalleryButton() {
+export function OutputGalleryButton({ projectId }: { projectId: string }) {
   const { elements } = useCanvas();
   const [open, setOpen] = useState(false);
+  const [library, setLibrary] = useState<GeneratedMedia[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listGeneratedMedia(projectId)
+      .then((items) => {
+        if (!cancelled) setLibrary(items);
+      })
+      .catch(() => {
+        if (!cancelled) setLibrary([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, open]);
 
   const outputs = useMemo(() => {
-    const items: OutputItem[] = [];
+    const items: OutputItem[] = library.map((item) => ({
+      url: item.url,
+      nodeId: item.node_id,
+      nodeLabel: item.model ?? "Generated media",
+      index: item.output_index,
+      mediaType: item.media_type,
+      createdAt: item.created_at,
+    }));
+    const seen = new Set(items.map((item) => item.url));
     for (const el of elements) {
       if (el.type !== "generate" || !el.nodeData?.outputUrls) continue;
       el.nodeData.outputUrls.forEach((url, i) => {
+        if (seen.has(url)) return;
         items.push({
           url,
           nodeId: el.id,
           nodeLabel: el.customLabel || el.nodeData?.label || "Generate",
           index: i,
+          mediaType: (el.nodeData?.properties.outputType as "image" | "video") || "image",
         });
       });
     }
     return items;
-  }, [elements]);
+  }, [elements, library]);
 
   if (outputs.length === 0) return null;
 
@@ -110,11 +138,7 @@ function OutputGalleryModal({
                     <span className="absolute left-3 top-3 rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-white">
                       {i + 1}
                     </span>
-                    <img
-                      src={url}
-                      alt={`Output ${i + 1}`}
-                      className="h-full w-full rounded-md object-contain"
-                    />
+                    <MediaPreview url={url} mediaType="image" className="h-full w-full rounded-md object-contain" />
                   </div>
                 ))}
               </div>
@@ -130,14 +154,17 @@ function OutputGalleryModal({
                       selected ? "border-blue-500 ring-1 ring-blue-500" : "border-neutral-200 hover:border-neutral-300"
                     }`}
                   >
-                    <img
-                      src={out.url}
-                      alt={`Output ${i + 1}`}
+                    <MediaPreview
+                      url={out.url}
+                      mediaType={out.mediaType}
                       className="aspect-video w-full rounded-md object-cover"
                     />
                     <div className="mt-2 flex items-center justify-between">
                       <span className="text-[10px] text-neutral-500">
                         {out.nodeLabel} #{out.index + 1}
+                      </span>
+                      <span className="rounded bg-neutral-200 px-1 py-0.5 text-[9px] uppercase text-neutral-500">
+                        {out.mediaType}
                       </span>
                     </div>
                     <div className="absolute inset-x-2 bottom-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -169,4 +196,19 @@ function OutputGalleryModal({
       </div>
     </div>
   );
+}
+
+function MediaPreview({
+  url,
+  mediaType,
+  className,
+}: {
+  url: string;
+  mediaType: "image" | "video";
+  className: string;
+}) {
+  if (mediaType === "video") {
+    return <video src={url} controls className={className} />;
+  }
+  return <img src={url} alt="" className={className} />;
 }

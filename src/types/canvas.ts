@@ -98,7 +98,6 @@ export const NODE_CONFIG: Record<
     defaultProps: {
       model: DEFAULT_GENERATION_MODEL.id,
       outputType: DEFAULT_GENERATION_MODEL.outputType,
-      outputFormat: DEFAULT_GENERATION_MODEL.outputFormat,
       duration: "5",
       count: "1",
     },
@@ -107,7 +106,7 @@ export const NODE_CONFIG: Record<
     label: "Output",
     w: 200,
     h: 200,
-    defaultProps: { outputIndex: "0", outputType: "image", outputFormat: "png" },
+    defaultProps: { outputIndex: "0", outputType: "image" },
   },
 };
 

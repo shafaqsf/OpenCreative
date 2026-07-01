@@ -4,7 +4,6 @@ export async function runGeneration(params: {
   prompt: string;
   model: string;
   outputType: string;
-  outputFormat: string;
   imageUrl?: string;
 }): Promise<{ url?: string; error?: string }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -18,7 +17,6 @@ export async function runGeneration(params: {
         text: [
           params.prompt,
           `Create a ${params.outputType} output.`,
-          `Return the result as ${params.outputFormat.toUpperCase()} if the model supports explicit output formats.`,
         ]
           .filter(Boolean)
           .join("\n\n"),

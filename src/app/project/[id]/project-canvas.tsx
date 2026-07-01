@@ -34,7 +34,7 @@ import {
   Magnet,
 } from "lucide-react";
 import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
-import { updateProjectWorkflow } from "@/lib/projects/service";
+import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
@@ -149,7 +149,6 @@ function ProjectCanvasInner({
           ...out.nodeData.properties,
           outputIndex: String(index),
           outputType: model.outputType,
-          outputFormat: model.outputFormat,
         };
         updateNodeProperties(out.id, properties);
         out.nodeData = { ...out.nodeData, properties };
@@ -170,7 +169,6 @@ function ProjectCanvasInner({
           const outEl = newNode("output", outX, outY);
           outEl.nodeData!.properties.outputIndex = String(i);
           outEl.nodeData!.properties.outputType = model.outputType;
-          outEl.nodeData!.properties.outputFormat = model.outputFormat;
           const outConnection = { id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id };
           outputElements.push(outEl);
           outputConnections.push(outConnection);
@@ -247,11 +245,20 @@ function ProjectCanvasInner({
               prompt,
               model: selectedModel.id,
               outputType: selectedModel.outputType,
-              outputFormat: selectedModel.outputFormat,
               imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
             });
             if (result.url) {
               allUrls.push(result.url);
+              await saveGeneratedMedia({
+                projectId: project.id,
+                nodeId: id,
+                outputIndex: i,
+                mediaType: selectedModel.outputType,
+                url: result.url,
+                model: selectedModel.id,
+                prompt,
+                sourceUrl: sourceUrl,
+              });
             } else {
               lastError = result.error || "Generation failed";
               anyError = true;
@@ -307,7 +314,7 @@ function ProjectCanvasInner({
     } finally {
       setRunning(false);
     }
-  }, [elements, connections, running, addElements, removeElements, updateNodeProperties, updateNodeStatus, addToast]);
+  }, [elements, connections, running, project.id, addElements, removeElements, updateNodeProperties, updateNodeStatus, addToast]);
 
   const commands = useMemo(
     () => [
@@ -569,7 +576,7 @@ function ProjectCanvasInner({
               Saving…
             </span>
           )}
-          <OutputGalleryButton />
+          <OutputGalleryButton projectId={project.id} />
         </div>
       </header>
 

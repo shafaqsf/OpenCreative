@@ -40,7 +40,7 @@ const NODE_CONFIG: Record<
         type: "select",
         options: GENERATION_MODELS.map((model) => ({
           value: model.id,
-          label: `${model.label} (${model.outputType}, ${model.outputFormat.toUpperCase()})`,
+          label: `${model.label} (${model.outputType})`,
         })),
       },
       { key: "duration", label: "Duration (s)", type: "number_min0" },
@@ -52,7 +52,6 @@ const NODE_CONFIG: Record<
     fields: [
       { key: "outputIndex", label: "Output index", type: "number" },
       { key: "outputType", label: "Type", type: "readonly" },
-      { key: "outputFormat", label: "Format", type: "readonly" },
     ],
   },
 };
@@ -116,7 +115,6 @@ export function PropertiesPanel() {
         ...nd.properties,
         model: nextModel.id,
         outputType: nextModel.outputType,
-        outputFormat: nextModel.outputFormat,
         count: String(normalizeOutputCount(nd.properties.count, nextModel.id)),
       };
       updateNodeProperties(el.id, properties);
@@ -155,10 +153,9 @@ export function PropertiesPanel() {
       if (!output.nodeData) return;
       updateNodeProperties(output.id, {
         ...output.nodeData.properties,
-        outputIndex: String(index),
-        outputType: model.outputType,
-        outputFormat: model.outputFormat,
-      });
+          outputIndex: String(index),
+          outputType: model.outputType,
+        });
     });
 
     const extraOutputs = outputConnections.slice(count).map(({ output }) => output.id);
@@ -174,7 +171,6 @@ export function PropertiesPanel() {
         ...output.nodeData!.properties,
         outputIndex: String(index),
         outputType: model.outputType,
-        outputFormat: model.outputFormat,
       };
       return output;
     });
@@ -239,12 +235,9 @@ export function PropertiesPanel() {
               ))}
             </div>
           </div>
-          <div className="rounded-md border border-neutral-200 px-2.5 py-2 text-[11px] text-neutral-600">
-            Output format:{" "}
-            <span className="font-semibold uppercase text-neutral-900">
-              {generationModel.outputFormat}
-            </span>
-          </div>
+          <p className="text-[10px] leading-relaxed text-neutral-400">
+            Downloads use the media URL returned by the model, so the file format is preserved by the provider.
+          </p>
         </div>
       )}
 

@@ -55,7 +55,7 @@ function wire(from: CanvasElement, to: CanvasElement): Connection {
 }
 
 function hydrateTemplates(): Template[] {
-  const imageModel = getGenerationModel("openai/gpt-image-1");
+  const imageModel = getGenerationModel("google/gemini-3.1-flash-image");
   const videoModel = getGenerationModel("kwaivgi/kling-v3.0-pro");
   const prompt = buildNode("prompt", 80, 120, {
     content: "A cinematic scene based on the prompt",
@@ -63,12 +63,10 @@ function hydrateTemplates(): Template[] {
   const generate1 = buildNode("generate", 360, 120, {
     model: imageModel.id,
     outputType: imageModel.outputType,
-    outputFormat: imageModel.outputFormat,
   });
   const output1 = buildNode("output", 620, 120, {
     outputIndex: "0",
     outputType: imageModel.outputType,
-    outputFormat: imageModel.outputFormat,
   });
 
   const source = buildNode("source", 80, 320, { fileType: "image" });
@@ -78,12 +76,10 @@ function hydrateTemplates(): Template[] {
   const generate2 = buildNode("generate", 360, 320, {
     model: videoModel.id,
     outputType: videoModel.outputType,
-    outputFormat: videoModel.outputFormat,
   });
   const output2 = buildNode("output", 620, 320, {
     outputIndex: "0",
     outputType: videoModel.outputType,
-    outputFormat: videoModel.outputFormat,
   });
 
   const prompt3 = buildNode("prompt", 80, 680, {
@@ -92,14 +88,12 @@ function hydrateTemplates(): Template[] {
   const generate3 = buildNode("generate", 360, 520, {
     model: imageModel.id,
     outputType: imageModel.outputType,
-    outputFormat: imageModel.outputFormat,
     count: "4",
   });
   const outputs3 = [0, 1, 2, 3].map((index) =>
     buildNode("output", 620, 430 + index * 120, {
       outputIndex: String(index),
       outputType: imageModel.outputType,
-      outputFormat: imageModel.outputFormat,
     })
   );
 
