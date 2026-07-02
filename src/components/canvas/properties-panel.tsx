@@ -1,15 +1,48 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Download, Eye, Trash2 } from "lucide-react";
-import { useCanvas } from "@/lib/canvas/context";
+import { useRef, useState, useTransition } from "react";
+import {
+  BadgeCheck,
+  Download,
+  Eye,
+  FlipHorizontal2,
+  FlipVertical2,
+  GitBranch,
+  ImagePlus,
+  RotateCw,
+  Scissors,
+  Sparkles,
+  Star,
+  Trash2,
+  Wand2,
+  XCircle,
+} from "lucide-react";
+import { newNode, useCanvas, uid } from "@/lib/canvas/context";
 import {
   GENERATION_MODELS,
   getGenerationModel,
 } from "@/lib/canvas/generation-models";
+import {
+  appendOutputVersion,
+  getActiveOutputVersion,
+  getNodeOutputType,
+  getOutputVersions,
+  removeOutputVersion,
+  selectOutputVersion,
+  updateOutputVersionReview,
+} from "@/lib/canvas/output-versions";
+import { runGeneration } from "@/lib/canvas/run-workflow";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/toast/context";
-import type { NodeData } from "@/types/canvas";
+import type {
+  CanvasElement,
+  Connection,
+  NodeData,
+  OutputEditMetadata,
+  OutputOperationType,
+  OutputReviewState,
+  OutputVersion,
+} from "@/types/canvas";
 
 const NODE_CONFIG: Record<
   string,
@@ -412,27 +445,33 @@ function OutputNodeEditor({
   elementId: string;
   nodeData: NodeData;
 }) {
-  const { updateElement, updateNodeProperties } = useCanvas();
-  const outputUrls =
-    nodeData.outputUrls && nodeData.outputUrls.length > 0
-      ? nodeData.outputUrls
-      : nodeData.outputUrl
-        ? [nodeData.outputUrl]
-        : [];
-  const selectedIndex = getSelectedOutputIndex(nodeData);
-  const selectedUrl = outputUrls[selectedIndex];
-  const outputType = (nodeData.properties.outputType as "image" | "video") || "image";
-  const fmtKey = `fmt_${selectedIndex}`;
-  const nameKey = `name_${selectedIndex}`;
+  const { elements, connections, updateElement, updateNodeProperties, addElements } = useCanvas();
+  const { addToast } = useToast();
+  const [pending, startTransition] = useTransition();
+  const [promptDelta, setPromptDelta] = useState("");
+  const [edit, setEdit] = useState<OutputEditMetadata>({
+    aspectRatio: "original",
+    rotation: 0,
+    background: "#ffffff",
+    text: "",
+    shape: "rectangle",
+    trimStart: "0",
+    trimEnd: "",
+    posterFrame: "0",
+  });
+  const versions = getOutputVersions(nodeData, elementId);
+  const activeVersion = getActiveOutputVersion(nodeData, elementId);
+  const selectedIndex = Math.max(0, versions.findIndex((version) => version.id === activeVersion?.id));
+  const selectedUrl = activeVersion?.url;
+  const outputType = activeVersion?.mediaType ?? getNodeOutputType(nodeData);
+  const fmtKey = `fmt_${activeVersion?.id ?? selectedIndex}`;
+  const nameKey = `name_${activeVersion?.id ?? selectedIndex}`;
   const format = nodeData.properties[fmtKey] || (outputType === "video" ? "mp4" : "png");
   const baseName = nodeData.properties[nameKey] || `output-${selectedIndex + 1}`;
   const fileName = `${baseName}.${format}`;
 
-  function selectOutput(index: number) {
-    updateNodeProperties(elementId, {
-      ...nodeData.properties,
-      selectedOutputIndex: String(index),
-    });
+  function patchNodeData(nextNodeData: NodeData) {
+    updateElement(elementId, { nodeData: nextNodeData });
   }
 
   function updateOutputProperty(key: string, value: string) {
@@ -443,21 +482,8 @@ function OutputNodeEditor({
   }
 
   function clearSelected() {
-    const nextUrls = outputUrls.filter((_url, index) => index !== selectedIndex);
-    const nextIndex = Math.max(0, Math.min(selectedIndex, nextUrls.length - 1));
-    updateElement(elementId, {
-      nodeData: {
-        ...nodeData,
-        status: nextUrls.length > 0 ? "done" : "idle",
-        outputUrl: nextUrls[nextIndex],
-        outputUrls: nextUrls.length > 0 ? nextUrls : undefined,
-        error: undefined,
-        properties: {
-          ...nodeData.properties,
-          selectedOutputIndex: String(nextIndex),
-        },
-      },
-    });
+    if (!activeVersion) return;
+    patchNodeData(removeOutputVersion(nodeData, activeVersion.id));
   }
 
   function clearAll() {
@@ -467,6 +493,9 @@ function OutputNodeEditor({
         status: "idle",
         outputUrl: undefined,
         outputUrls: undefined,
+        outputVersions: undefined,
+        activeOutputVersionId: undefined,
+        finalOutputVersionId: undefined,
         error: undefined,
         properties: {
           ...nodeData.properties,
@@ -476,7 +505,156 @@ function OutputNodeEditor({
     });
   }
 
-  if (outputUrls.length === 0 || !selectedUrl) {
+  async function createLocalEdit(operationType: OutputOperationType, metadata: OutputEditMetadata) {
+    if (!activeVersion) return;
+    if (activeVersion.mediaType === "video") {
+      patchNodeData(
+        appendOutputVersion(nodeData, {
+          url: activeVersion.url,
+          mediaType: "video",
+          parentVersionId: activeVersion.id,
+          sourceNodeId: elementId,
+          operationType,
+          editMetadata: metadata,
+        })
+      );
+      return;
+    }
+
+    try {
+      const url = await renderImageEdit(activeVersion.url, metadata);
+      patchNodeData(
+        appendOutputVersion(nodeData, {
+          url,
+          mediaType: "image",
+          parentVersionId: activeVersion.id,
+          sourceNodeId: elementId,
+          operationType,
+          editMetadata: metadata,
+        })
+      );
+      addToast({ title: "Edit created", message: "A new output version is ready.", variant: "success" });
+    } catch (err) {
+      addToast({
+        title: "Edit failed",
+        message: err instanceof Error ? err.message : "Could not edit this output.",
+        variant: "error",
+      });
+    }
+  }
+
+  function createPromptRefinement(operationType: OutputOperationType, defaultDelta: string) {
+    if (!activeVersion) return;
+    const delta = promptDelta.trim() || defaultDelta;
+    startTransition(async () => {
+      const result = await runGeneration({
+        prompt: delta,
+        model: nodeData.properties.model || getGenerationModel(undefined).id,
+        outputType: activeVersion.mediaType,
+        imageUrl: activeVersion.mediaType === "image" ? activeVersion.url : undefined,
+        duration: nodeData.properties.duration,
+      });
+      if (!result.url) {
+        addToast({
+          title: "Refinement unavailable",
+          message: result.error || "The provider did not return edited media.",
+          variant: "warning",
+        });
+        return;
+      }
+      patchNodeData(
+        appendOutputVersion(nodeData, {
+          url: result.url,
+          mediaType: activeVersion.mediaType,
+          parentVersionId: activeVersion.id,
+          sourceNodeId: elementId,
+          operationType,
+          promptDelta: delta,
+        })
+      );
+      setPromptDelta("");
+      addToast({ title: "Refinement created", message: "A derived output version was added.", variant: "success" });
+    });
+  }
+
+  function setReview(version: OutputVersion, approvalState: OutputReviewState) {
+    patchNodeData(updateOutputVersionReview(nodeData, version.id, approvalState));
+  }
+
+  function createSourceFromVersion(version: OutputVersion) {
+    const source = newNode("source", 80, 80);
+    const sourceNode: CanvasElement = {
+      ...source,
+      x: 80,
+      y: 80,
+      nodeData: {
+        ...source.nodeData!,
+        status: "done",
+        outputUrl: version.url,
+        properties: {
+          ...source.nodeData!.properties,
+          url: version.url,
+          fileType: version.mediaType,
+          fileName: `${version.operationType}-${version.id.slice(-4)}`,
+          sourceOutputVersionId: version.id,
+        },
+      },
+    };
+    addElements([sourceNode]);
+    addToast({ title: "Source created", message: "The selected version is now reusable on the canvas.", variant: "success" });
+  }
+
+  function branchFromVersion(version: OutputVersion) {
+    const outputElement = elements.find((element) => element.id === elementId);
+    const x = outputElement ? outputElement.x + outputElement.width + 80 : 120;
+    const y = outputElement ? outputElement.y : 120;
+    const source = newNode("source", x, y);
+    const generate = newNode("generate", x + 250, y);
+    const output = newNode("output", x + 520, y);
+    const sourceNode: CanvasElement = {
+      ...source,
+      nodeData: {
+        ...source.nodeData!,
+        status: "done",
+        outputUrl: version.url,
+        properties: {
+          ...source.nodeData!.properties,
+          url: version.url,
+          fileType: version.mediaType,
+          sourceOutputVersionId: version.id,
+        },
+      },
+    };
+    const generateNode: CanvasElement = {
+      ...generate,
+      nodeData: {
+        ...generate.nodeData!,
+        properties: {
+          ...generate.nodeData!.properties,
+          prompt: `Create a variation from ${version.operationType} output ${version.id}.`,
+        },
+      },
+    };
+    const outputNode: CanvasElement = {
+      ...output,
+      nodeData: {
+        ...output.nodeData!,
+        properties: {
+          ...output.nodeData!.properties,
+          outputType: version.mediaType,
+          parentOutputVersionId: version.id,
+        },
+      },
+    };
+    const newConnections: Connection[] = [
+      { id: uid(), fromId: sourceNode.id, toId: generateNode.id },
+      { id: uid(), fromId: generateNode.id, toId: outputNode.id },
+    ];
+    addElements([sourceNode, generateNode, outputNode], newConnections);
+    addToast({ title: "Branch created", message: "A variation chain was added beside the output.", variant: "success" });
+  }
+
+  if (versions.length === 0 || !selectedUrl || !activeVersion) {
     return (
       <div className="px-4 py-3">
         <p className="rounded-md border border-dashed border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-neutral-400">
@@ -490,36 +668,146 @@ function OutputNodeEditor({
     <div className="space-y-4 px-4 py-3">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-medium text-neutral-500">Active media</span>
+          <span className="text-[11px] font-medium text-neutral-500">Active version</span>
           <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] text-neutral-500">
-            {selectedIndex + 1} / {outputUrls.length}
+            {selectedIndex + 1} / {versions.length}
           </span>
         </div>
         <MediaPreview url={selectedUrl} mediaType={outputType} />
+        <div className="flex flex-wrap gap-1">
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase text-neutral-500">
+            {activeVersion.operationType}
+          </span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] uppercase ${reviewClass(activeVersion.approvalState)}`}>
+            {activeVersion.approvalState}
+          </span>
+        </div>
       </div>
 
-      {outputUrls.length > 1 && (
+      {versions.length > 1 && (
         <div className="space-y-2">
           <span className="block text-[11px] font-medium text-neutral-500">
-            Media used downstream
+            Versions
           </span>
           <div className="grid grid-cols-4 gap-2">
-            {outputUrls.map((url, index) => (
+            {versions.map((version, index) => (
               <button
-                key={`${url}-${index}`}
+                key={version.id}
                 type="button"
-                onClick={() => selectOutput(index)}
+                onClick={() => patchNodeData(selectOutputVersion(nodeData, version.id))}
                 className={`overflow-hidden rounded-md border ${
                   index === selectedIndex ? "border-neutral-900" : "border-neutral-200"
                 } bg-neutral-50`}
-                title={`Use output ${index + 1} downstream`}
+                title={`Use version ${index + 1} downstream`}
               >
-                <MediaPreview url={url} mediaType={outputType} compact />
+                <MediaPreview url={version.url} mediaType={version.mediaType} compact />
               </button>
             ))}
           </div>
         </div>
       )}
+
+      <div className="space-y-2">
+        <span className="block text-[11px] font-medium text-neutral-500">Review</span>
+        <div className="grid grid-cols-5 gap-1">
+          <IconAction title="Favorite" onClick={() => setReview(activeVersion, "favorite")} icon={<Star className="size-3" />} />
+          <IconAction title="Reject" onClick={() => setReview(activeVersion, "rejected")} icon={<XCircle className="size-3" />} />
+          <IconAction title="Approve" onClick={() => setReview(activeVersion, "approved")} icon={<BadgeCheck className="size-3" />} />
+          <IconAction title="Final" onClick={() => setReview(activeVersion, "final")} icon={<BadgeCheck className="size-3 fill-neutral-900" />} />
+          <IconAction title="Open" onClick={() => window.open(selectedUrl, "_blank")} icon={<Eye className="size-3" />} />
+        </div>
+      </div>
+
+      {outputType === "image" ? (
+        <div className="space-y-3">
+          <span className="block text-[11px] font-medium text-neutral-500">Quick edit</span>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={edit.aspectRatio}
+              onChange={(event) => setEdit((prev) => ({ ...prev, aspectRatio: event.target.value }))}
+              className={selectCls}
+            >
+              <option value="original">Original</option>
+              <option value="1:1">1:1</option>
+              <option value="4:5">4:5</option>
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+            </select>
+            <input
+              value={edit.background}
+              onChange={(event) => setEdit((prev) => ({ ...prev, background: event.target.value }))}
+              className={inputCls}
+              placeholder="#ffffff"
+            />
+          </div>
+          <input
+            value={edit.text}
+            onChange={(event) => setEdit((prev) => ({ ...prev, text: event.target.value }))}
+            className={inputCls}
+            placeholder="Overlay text"
+          />
+          <div className="grid grid-cols-3 gap-1">
+            <IconAction title="Crop" onClick={() => createLocalEdit("crop", edit)} icon={<Scissors className="size-3" />} />
+            <IconAction title="Rotate" onClick={() => createLocalEdit("rotate", { ...edit, rotation: (edit.rotation ?? 0) + 90 })} icon={<RotateCw className="size-3" />} />
+            <IconAction title="Flip X" onClick={() => createLocalEdit("flip", { ...edit, flipX: true })} icon={<FlipHorizontal2 className="size-3" />} />
+            <IconAction title="Flip Y" onClick={() => createLocalEdit("flip", { ...edit, flipY: true })} icon={<FlipVertical2 className="size-3" />} />
+            <IconAction title="Background" onClick={() => createLocalEdit("background", edit)} icon={<ImagePlus className="size-3" />} />
+            <IconAction title="Overlay" onClick={() => createLocalEdit(edit.text ? "text" : "shape", edit)} icon={<Wand2 className="size-3" />} />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <span className="block text-[11px] font-medium text-neutral-500">Video metadata</span>
+          <div className="grid grid-cols-3 gap-2">
+            <input value={edit.trimStart} onChange={(event) => setEdit((prev) => ({ ...prev, trimStart: event.target.value }))} className={inputCls} placeholder="Start" />
+            <input value={edit.trimEnd} onChange={(event) => setEdit((prev) => ({ ...prev, trimEnd: event.target.value }))} className={inputCls} placeholder="End" />
+            <input value={edit.posterFrame} onChange={(event) => setEdit((prev) => ({ ...prev, posterFrame: event.target.value }))} className={inputCls} placeholder="Poster" />
+          </div>
+          <button type="button" onClick={() => createLocalEdit("trim", edit)} className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
+            <Scissors className="size-3" />
+            Save video edit
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <span className="block text-[11px] font-medium text-neutral-500">AI refinement</span>
+        <textarea
+          value={promptDelta}
+          onChange={(event) => setPromptDelta(event.target.value)}
+          className={textareaCls}
+          rows={2}
+          placeholder="Optional edit instruction"
+        />
+        <div className="grid grid-cols-2 gap-1">
+          {REFINEMENT_ACTIONS.map((action) => (
+            <button
+              key={action.type}
+              type="button"
+              disabled={pending}
+              onClick={() => createPromptRefinement(action.type, action.prompt)}
+              className="inline-flex items-center justify-center gap-1 rounded-md border border-neutral-200 px-2 py-1.5 text-[10px] font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              <Sparkles className="size-3" />
+              {action.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <span className="block text-[11px] font-medium text-neutral-500">Reuse</span>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => createSourceFromVersion(activeVersion)} className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
+            <ImagePlus className="size-3" />
+            Use as source
+          </button>
+          <button type="button" onClick={() => branchFromVersion(activeVersion)} className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
+            <GitBranch className="size-3" />
+            Branch
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-[1fr_88px] gap-2">
         <label className="block">
@@ -596,6 +884,121 @@ function OutputNodeEditor({
       </div>
     </div>
   );
+}
+
+const REFINEMENT_ACTIONS: { type: OutputOperationType; label: string; prompt: string }[] = [
+  { type: "upscale", label: "Upscale", prompt: "Upscale this output while preserving the composition and visual identity." },
+  { type: "remove-background", label: "Remove bg", prompt: "Remove the background and keep the main subject cleanly isolated." },
+  { type: "erase", label: "Erase", prompt: "Remove distracting elements while keeping the rest of the image natural." },
+  { type: "inpaint", label: "Inpaint", prompt: "Fill missing or rough areas with coherent visual detail." },
+  { type: "restyle", label: "Restyle", prompt: "Restyle this output with a polished editorial look." },
+  { type: "similar", label: "Similar", prompt: "Generate a close variation of this output with the same subject and layout." },
+];
+
+function IconAction({
+  title,
+  icon,
+  onClick,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className="inline-flex h-8 items-center justify-center rounded-md border border-neutral-200 text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+    >
+      {icon}
+    </button>
+  );
+}
+
+function reviewClass(state: OutputReviewState) {
+  if (state === "favorite") return "bg-amber-100 text-amber-700";
+  if (state === "rejected") return "bg-red-100 text-red-700";
+  if (state === "approved") return "bg-emerald-100 text-emerald-700";
+  if (state === "final") return "bg-neutral-900 text-white";
+  return "bg-neutral-100 text-neutral-500";
+}
+
+async function renderImageEdit(url: string, metadata: OutputEditMetadata) {
+  const image = await loadImage(url);
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const crop = getCropRect(sourceWidth, sourceHeight, metadata.aspectRatio);
+  const rotation = ((metadata.rotation ?? 0) % 360 + 360) % 360;
+  const rotated = rotation === 90 || rotation === 270;
+  const canvas = document.createElement("canvas");
+  canvas.width = rotated ? crop.height : crop.width;
+  canvas.height = rotated ? crop.width : crop.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas editing is not available in this browser.");
+
+  ctx.fillStyle = metadata.background || "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.scale(metadata.flipX ? -1 : 1, metadata.flipY ? -1 : 1);
+  ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, -crop.width / 2, -crop.height / 2, crop.width, crop.height);
+  ctx.restore();
+
+  if (metadata.shape) {
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = Math.max(4, Math.round(canvas.width * 0.01));
+    const margin = Math.round(Math.min(canvas.width, canvas.height) * 0.08);
+    if (metadata.shape === "ellipse") {
+      ctx.beginPath();
+      ctx.ellipse(canvas.width / 2, canvas.height / 2, canvas.width / 2 - margin, canvas.height / 2 - margin, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(margin, margin, canvas.width - margin * 2, canvas.height - margin * 2);
+    }
+  }
+
+  if (metadata.text?.trim()) {
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.lineWidth = 4;
+    ctx.font = `700 ${Math.max(24, Math.round(canvas.width * 0.055))}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const text = metadata.text.trim();
+    const x = canvas.width / 2;
+    const y = canvas.height - Math.round(canvas.height * 0.08);
+    ctx.strokeText(text, x, y, canvas.width * 0.9);
+    ctx.fillText(text, x, y, canvas.width * 0.9);
+  }
+
+  return canvas.toDataURL("image/png");
+}
+
+function getCropRect(width: number, height: number, ratio?: string) {
+  if (!ratio || ratio === "original") return { x: 0, y: 0, width, height };
+  const [rw, rh] = ratio.split(":").map(Number);
+  if (!rw || !rh) return { x: 0, y: 0, width, height };
+  const target = rw / rh;
+  const current = width / height;
+  if (current > target) {
+    const nextWidth = Math.round(height * target);
+    return { x: Math.round((width - nextWidth) / 2), y: 0, width: nextWidth, height };
+  }
+  const nextHeight = Math.round(width / target);
+  return { x: 0, y: Math.round((height - nextHeight) / 2), width, height: nextHeight };
+}
+
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("The image could not be loaded for editing."));
+    image.src = url;
+  });
 }
 
 function MediaPreview({
