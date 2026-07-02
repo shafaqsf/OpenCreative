@@ -1,4 +1,5 @@
 import { getGenerationModel } from "./generation-models";
+import { getFinalOrActiveOutputVersion, normalizeOutputVersions } from "./output-versions";
 import type { CanvasElement, Connection, NodeType } from "@/types/canvas";
 
 export type WorkflowNodeElement = CanvasElement & {
@@ -88,7 +89,11 @@ export function normalizeConnectionDirection(
 }
 
 function hasOutputMedia(element: WorkflowNodeElement) {
-  return Boolean(element.nodeData.outputUrl || element.nodeData.outputUrls?.length);
+  return Boolean(
+    element.nodeData.outputUrl ||
+      element.nodeData.outputUrls?.length ||
+      element.nodeData.outputVersions?.length
+  );
 }
 
 export function prepareWorkflowRun(
@@ -129,8 +134,18 @@ export function prepareWorkflowRun(
         status: "idle",
         outputUrl: undefined,
         outputUrls: undefined,
+        outputVersions: undefined,
+        activeOutputVersionId: undefined,
+        finalOutputVersionId: undefined,
         error: undefined,
       };
+      continue;
+    }
+    if (nodeType === "output") {
+      node.nodeData = normalizeOutputVersions({
+        ...node.nodeData,
+        error: undefined,
+      }, node.id);
     }
   }
 
@@ -341,6 +356,12 @@ function cloneElementsForRun(elements: CanvasElement[]): CanvasElement[] {
           ...element.nodeData,
           properties: { ...element.nodeData.properties },
           outputUrls: element.nodeData.outputUrls ? [...element.nodeData.outputUrls] : undefined,
+          outputVersions: element.nodeData.outputVersions
+            ? element.nodeData.outputVersions.map((version) => ({
+                ...version,
+                editMetadata: version.editMetadata ? { ...version.editMetadata } : undefined,
+              }))
+            : undefined,
         }
       : undefined,
   }));
@@ -417,6 +438,9 @@ function dedupe(values: string[]) {
 }
 
 function getSelectedOutputUrl(nodeData: WorkflowNodeElement["nodeData"]) {
+  const version = getFinalOrActiveOutputVersion(nodeData);
+  if (version) return version.url;
+
   if (!nodeData.outputUrls || nodeData.outputUrls.length === 0) {
     return nodeData.outputUrl;
   }

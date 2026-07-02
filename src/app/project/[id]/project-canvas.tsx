@@ -49,6 +49,7 @@ import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { formatGenerationFailureForUser } from "@/lib/canvas/generation-errors";
 import { runGeneration } from "@/lib/canvas/run-workflow";
 import { getGenerationModel } from "@/lib/canvas/generation-models";
+import { appendOutputVersion } from "@/lib/canvas/output-versions";
 import {
   collectGenerateInput,
   getGenerateRunIssue,
@@ -264,6 +265,9 @@ function ProjectCanvasInner({
           status?: NodeStatus;
           outputUrl?: string;
           outputUrls?: string[];
+          outputVersions?: NonNullable<WorkflowState["elements"][number]["nodeData"]>["outputVersions"];
+          activeOutputVersionId?: string;
+          finalOutputVersionId?: string;
           error?: string;
         }
       ) => {
@@ -300,22 +304,15 @@ function ProjectCanvasInner({
       const appendOutputResult = (id: string, url: string) => {
         workingElements = workingElements.map((element) => {
           if (element.id !== id || !element.nodeData) return element;
-          const outputUrls = [...(element.nodeData.outputUrls ?? [])];
-          outputUrls.push(url);
-          const selectedOutputIndex = String(outputUrls.length - 1);
+          const nodeData = appendOutputVersion(element.nodeData, {
+            url,
+            mediaType: (element.nodeData.properties.outputType as "image" | "video") || "image",
+            sourceNodeId: id,
+            operationType: "generated",
+          });
           return {
             ...element,
-            nodeData: {
-              ...element.nodeData,
-              status: "done",
-              outputUrl: url,
-              outputUrls,
-              error: undefined,
-              properties: {
-                ...element.nodeData.properties,
-                selectedOutputIndex,
-              },
-            },
+            nodeData: { ...nodeData, error: undefined },
           };
         });
       };

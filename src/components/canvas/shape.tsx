@@ -5,6 +5,7 @@ import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 import { useCanvas } from "@/lib/canvas/context";
 import { getGenerationModel } from "@/lib/canvas/generation-models";
+import { getActiveOutputVersion, getOutputVersions } from "@/lib/canvas/output-versions";
 import { collectGenerateInput, getConnectedOutputIds, getGenerateRunIssue } from "@/lib/canvas/workflow-engine";
 
 const NODE_COLORS: Record<NodeType, string> = {
@@ -163,11 +164,13 @@ function WorkflowNode({
 
   const sourceUrl = nodeType === "source" ? nodeData.properties.url?.trim() : undefined;
   const selectedOutputIndex = getSelectedOutputIndex(nodeData);
-  const displayUrl = outputUrls && outputUrls.length > 0
+  const activeVersion = getActiveOutputVersion(nodeData, element.id);
+  const versionCount = getOutputVersions(nodeData, element.id).length;
+  const displayUrl = activeVersion?.url ?? (outputUrls && outputUrls.length > 0
     ? outputUrls[selectedOutputIndex] ?? outputUrls[0]
-    : outputUrl;
+    : outputUrl);
   const mediaUrl = sourceUrl || displayUrl;
-  const outputType = nodeData.properties.outputType || nodeData.properties.fileType;
+  const outputType = activeVersion?.mediaType || nodeData.properties.outputType || nodeData.properties.fileType;
   const showMedia =
     Boolean(mediaUrl) &&
     (nodeType === "source" || (nodeType === "output" && (status === "done" || status === "idle")));
@@ -346,7 +349,7 @@ function WorkflowNode({
                   }}
                 />
               )}
-              {nodeType === "output" && outputUrls && outputUrls.length > 1 && (
+              {nodeType === "output" && versionCount > 1 && (
                 <div
                   style={{
                     position: "absolute",
@@ -361,7 +364,7 @@ function WorkflowNode({
                     lineHeight: 1.4,
                   }}
                 >
-                  {outputUrls.length}
+                  {versionCount}
                 </div>
               )}
               {nodeType === "source" && nodeData.properties.fileName && (

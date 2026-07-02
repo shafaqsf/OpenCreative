@@ -1,4 +1,5 @@
 import type { CanvasElement, NodeData, NodeStatus, WorkflowState } from "@/types/canvas";
+import { normalizeOutputVersions } from "@/lib/canvas/output-versions";
 
 export function sanitizeWorkflowForPersistence(state: WorkflowState): WorkflowState {
   return {
@@ -19,16 +20,21 @@ function sanitizeElementForPersistence(element: CanvasElement): CanvasElement {
 }
 
 function sanitizeNodeDataForPersistence(nodeData: NodeData): NodeData {
-  const outputUrls = nodeData.outputUrls?.filter(Boolean);
-  const outputUrl = nodeData.outputUrl || outputUrls?.[0];
+  const normalized =
+    nodeData.nodeType === "output" || nodeData.nodeType === "generate"
+      ? normalizeOutputVersions(nodeData)
+      : nodeData;
+  const outputUrls = normalized.outputUrls?.filter(Boolean);
+  const outputUrl = normalized.outputUrl || outputUrls?.[0];
 
   return {
-    ...nodeData,
-    status: getDurableStatus(nodeData, outputUrl, outputUrls),
+    ...normalized,
+    status: getDurableStatus(normalized, outputUrl, outputUrls),
     outputUrl,
     outputUrls: outputUrls && outputUrls.length > 0 ? outputUrls : undefined,
     error: undefined,
-    properties: { ...nodeData.properties },
+    properties: { ...normalized.properties },
+    outputVersions: normalized.outputVersions?.map((version) => ({ ...version, editMetadata: version.editMetadata ? { ...version.editMetadata } : undefined })),
   };
 }
 

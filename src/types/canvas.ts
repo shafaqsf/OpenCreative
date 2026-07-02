@@ -22,6 +22,55 @@ export type NodeType = "prompt" | "source" | "generate" | "output";
 
 export type NodeStatus = "idle" | "running" | "done" | "error";
 
+export type OutputMediaType = "image" | "video";
+
+export type OutputReviewState = "none" | "favorite" | "rejected" | "approved" | "final";
+
+export type OutputOperationType =
+  | "generated"
+  | "uploaded"
+  | "crop"
+  | "rotate"
+  | "flip"
+  | "background"
+  | "text"
+  | "shape"
+  | "trim"
+  | "poster"
+  | "upscale"
+  | "remove-background"
+  | "erase"
+  | "inpaint"
+  | "restyle"
+  | "similar";
+
+export type OutputEditMetadata = {
+  label?: string;
+  aspectRatio?: string;
+  rotation?: number;
+  flipX?: boolean;
+  flipY?: boolean;
+  background?: string;
+  text?: string;
+  shape?: "rectangle" | "ellipse";
+  trimStart?: string;
+  trimEnd?: string;
+  posterFrame?: string;
+};
+
+export type OutputVersion = {
+  id: string;
+  url: string;
+  mediaType: OutputMediaType;
+  parentVersionId?: string;
+  sourceNodeId?: string;
+  operationType: OutputOperationType;
+  promptDelta?: string;
+  approvalState: OutputReviewState;
+  createdAt: string;
+  editMetadata?: OutputEditMetadata;
+};
+
 export type NodeData = {
   nodeType: NodeType;
   label: string;
@@ -29,6 +78,9 @@ export type NodeData = {
   status: NodeStatus;
   outputUrl?: string;
   outputUrls?: string[];
+  outputVersions?: OutputVersion[];
+  activeOutputVersionId?: string;
+  finalOutputVersionId?: string;
   error?: string;
 };
 
