@@ -209,6 +209,27 @@ function ProjectCanvasInner({
 
   useKeyboardShortcuts();
 
+  const workflowRunState = useMemo(() => {
+    const generateNodes = elements.filter(
+      (element) => element.nodeData?.nodeType === "generate"
+    );
+    if (generateNodes.length === 0) {
+      return { canRun: false, reason: "Add a Generate node." };
+    }
+
+    const firstIssue = generateNodes
+      .map((node) => getGenerateRunIssue(elements, connections, node.id))
+      .find(Boolean);
+    const hasRunnableGenerate = generateNodes.some(
+      (node) => !getGenerateRunIssue(elements, connections, node.id)
+    );
+
+    return {
+      canRun: hasRunnableGenerate,
+      reason: hasRunnableGenerate ? undefined : firstIssue,
+    };
+  }, [elements, connections]);
+
   const handleRunRef = useRef<() => void>(() => {});
   const processQueueRef = useRef<() => void>(() => {});
   const processQueue = useCallback(() => {
@@ -234,6 +255,8 @@ function ProjectCanvasInner({
     let anyValidationIssue = false;
     let anyGenerationError = false;
     let anySaveError = false;
+    let firstValidationIssue: string | undefined;
+    let firstGenerationError: string | undefined;
 
     try {
       const prepared = prepareWorkflowRun(elements, connections);
@@ -323,7 +346,7 @@ function ProjectCanvasInner({
         const runIssue = getGenerateRunIssue(workingElements, workingConnections, generateId);
 
         if (runIssue) {
-          const title = outputIds.length === 0 ? "Generate needs an output" : "Generate needs an input";
+          const title = runIssue === "Connect an Output node." ? "Connect an Output node" : "Generate needs input";
           setNodeState(generateId, { status: "error", error: runIssue });
           outputIds.forEach((id) => setNodeState(id, { status: "error", error: runIssue }));
           flushRunState();
@@ -333,6 +356,7 @@ function ProjectCanvasInner({
             variant: "warning",
           });
           anyValidationIssue = true;
+          firstValidationIssue ??= runIssue;
           continue;
         }
 
@@ -351,6 +375,7 @@ function ProjectCanvasInner({
             variant: "warning",
           });
           anyValidationIssue = true;
+          firstValidationIssue ??= message;
           continue;
         }
 
@@ -380,6 +405,7 @@ function ProjectCanvasInner({
           } else {
             lastError = result.error || "Generation failed";
             anyGenerationError = true;
+            firstGenerationError ??= lastError;
             if (outputId) {
               setNodeState(outputId, {
                 status: "error",
@@ -425,15 +451,15 @@ function ProjectCanvasInner({
       }
 
       if (anyGenerationError && anySaveError) {
-        addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
+        addToast({ title: "Workflow finished with errors", message: firstGenerationError ?? "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anyGenerationError) {
-        addToast({ title: "Workflow finished with errors", message: "Generation failed. Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
+        addToast({ title: "Generation request failed", message: firstGenerationError ?? "Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anySaveError) {
         addToast({ title: "Workflow complete", message: "Outputs were created, but some gallery saves failed.", variant: "warning" });
       } else if (anyValidationIssue) {
         addToast({
           title: "Workflow needs attention",
-          message: "Some generate nodes were skipped because required connections are missing.",
+          message: firstValidationIssue ?? "Some generate nodes were skipped.",
           variant: "warning",
         });
       } else {
@@ -796,13 +822,13 @@ function ProjectCanvasInner({
 
           <button
             onClick={handleRun}
-            disabled={running}
+            disabled={running || !workflowRunState.canRun}
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-              running
+              running || !workflowRunState.canRun
                 ? "bg-neutral-100 text-neutral-400"
                 : "bg-neutral-900 text-white hover:bg-neutral-800"
             }`}
-            title="Run workflow"
+            title={workflowRunState.canRun ? "Run workflow" : workflowRunState.reason}
           >
             {running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
             {running ? "Running" : "Run"}
