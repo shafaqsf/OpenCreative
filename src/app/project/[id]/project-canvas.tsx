@@ -54,12 +54,17 @@ import {
   getNode,
   prepareWorkflowRun,
 } from "@/lib/canvas/workflow-engine";
+import { sanitizeWorkflowForPersistence } from "@/lib/canvas/workflow-persistence";
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import { useRegisterCommands } from "@/lib/command-palette/context";
 import type { Project } from "@/lib/projects/service";
 import type { NodeStatus, WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
+  const initialWorkflow = useMemo(
+    () => sanitizeWorkflowForPersistence(project.workflow),
+    [project.workflow]
+  );
   const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
   const [autoSave, setAutoSave] = useState(true);
   const autoSaveRef = useRef(autoSave);
@@ -67,7 +72,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   const latestStateRef = useRef<WorkflowState | null>(null);
   const saveStateRef = useRef<"idle" | "scheduled" | "saving">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedStateRef = useRef(JSON.stringify(project.workflow));
+  const lastSavedStateRef = useRef(JSON.stringify(initialWorkflow));
   const pendingAfterSaveRef = useRef(false);
 
   const scheduleSave = useCallback(() => {
@@ -85,7 +90,8 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
         saveStateRef.current = "idle";
         return;
       }
-      const serialized = JSON.stringify(state);
+      const persistedState = sanitizeWorkflowForPersistence(state);
+      const serialized = JSON.stringify(persistedState);
       if (serialized === lastSavedStateRef.current) {
         saveStateRef.current = "idle";
         setSaveStatus("saved");
@@ -96,7 +102,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
       setSaveStatus("saving");
       const stateAtStart = latestStateRef.current;
       try {
-        await updateProjectWorkflow(project.id, state);
+        await updateProjectWorkflow(project.id, persistedState);
         lastSavedStateRef.current = serialized;
         setSaveStatus("saved");
       } catch {
@@ -113,7 +119,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   const handleChange = useCallback(
     (state: WorkflowState) => {
       latestStateRef.current = state;
-      const serialized = JSON.stringify(state);
+      const serialized = JSON.stringify(sanitizeWorkflowForPersistence(state));
       if (serialized === lastSavedStateRef.current) {
         setSaveStatus("saved");
         return;
@@ -134,9 +140,10 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveStateRef.current = "saving";
     setSaveStatus("saving");
-    const serialized = JSON.stringify(latestStateRef.current);
+    const persistedState = sanitizeWorkflowForPersistence(latestStateRef.current);
+    const serialized = JSON.stringify(persistedState);
     try {
-      await updateProjectWorkflow(project.id, latestStateRef.current);
+      await updateProjectWorkflow(project.id, persistedState);
       lastSavedStateRef.current = serialized;
       setSaveStatus("saved");
     } catch {
@@ -153,7 +160,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   }, []);
 
   return (
-    <CanvasProvider initial={project.workflow} onChange={handleChange}>
+    <CanvasProvider initial={initialWorkflow} onChange={handleChange}>
       <ProjectCanvasInner
         project={project}
         saveStatus={saveStatus}
@@ -272,6 +279,23 @@ function ProjectCanvasInner({
         });
       };
 
+      const settleNode = (id: string) => {
+        workingElements = workingElements.map((element) => {
+          if (element.id !== id || !element.nodeData) return element;
+          const hasMedia = Boolean(element.nodeData.outputUrl || element.nodeData.outputUrls?.length);
+          const hasSource = Boolean(element.nodeData.properties.url?.trim());
+          return {
+            ...element,
+            nodeData: {
+              ...element.nodeData,
+              status: hasMedia || hasSource ? "done" : "idle",
+              error: undefined,
+              properties: { ...element.nodeData.properties },
+            },
+          };
+        });
+      };
+
       const appendOutputResult = (id: string, url: string) => {
         workingElements = workingElements.map((element) => {
           if (element.id !== id || !element.nodeData) return element;
@@ -325,8 +349,8 @@ function ProjectCanvasInner({
 
         if (runIssue) {
           const title = runIssue === "Connect an Output node." ? "Connect an Output node" : "Generate needs input";
-          setNodeState(generateId, { status: "error", error: runIssue });
-          outputIds.forEach((id) => setNodeState(id, { status: "error", error: runIssue }));
+          settleNode(generateId);
+          outputIds.forEach(settleNode);
           flushRunState();
           addToast({
             title,
@@ -338,14 +362,10 @@ function ProjectCanvasInner({
           continue;
         }
 
-        setNodeState(generateId, { status: "running", error: undefined });
-        outputIds.forEach((id) => setNodeState(id, { status: "running", error: undefined }));
-        flushRunState();
-
         if (input.mediaUrl && !selectedModel.supportsImageInput) {
           const message = `The selected model (${selectedModel.label}) does not support image input. Connect a prompt-only workflow or switch to a model that accepts images.`;
-          setNodeState(generateId, { status: "error", error: message });
-          outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
+          settleNode(generateId);
+          outputIds.forEach(settleNode);
           flushRunState();
           addToast({
             title: "Model cannot use this input",
@@ -356,6 +376,10 @@ function ProjectCanvasInner({
           firstValidationIssue ??= message;
           continue;
         }
+
+        setNodeState(generateId, { status: "running", error: undefined });
+        outputIds.forEach((id) => setNodeState(id, { status: "running", error: undefined }));
+        flushRunState();
 
         const results = await Promise.all(
           outputIds.map(async (_outputId, index) => {
@@ -385,10 +409,7 @@ function ProjectCanvasInner({
             anyGenerationError = true;
             firstGenerationError ??= lastError;
             if (outputId) {
-              setNodeState(outputId, {
-                status: "error",
-                error: lastError,
-              });
+              settleNode(outputId);
             }
           }
         }
@@ -421,8 +442,10 @@ function ProjectCanvasInner({
           anySaveError = saveResults.some((result) => result.status === "rejected");
         } else {
           setNodeState(generateId, {
-            status: "error",
-            error: lastError || "Generation failed",
+            status: "idle",
+            outputUrl: undefined,
+            outputUrls: undefined,
+            error: undefined,
           });
         }
         flushRunState();
