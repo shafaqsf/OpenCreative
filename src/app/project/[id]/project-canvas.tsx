@@ -51,6 +51,7 @@ import { runGeneration } from "@/lib/canvas/run-workflow";
 import { getGenerationModel } from "@/lib/canvas/generation-models";
 import {
   collectGenerateInput,
+  getGenerateRunIssue,
   getNode,
   prepareWorkflowRun,
 } from "@/lib/canvas/workflow-engine";
@@ -318,28 +319,16 @@ function ProjectCanvasInner({
         const selectedModel = getGenerationModel(generateNode.nodeData.properties.model);
         const outputIds = prepared.freshOutputIds[generateId] ?? [];
         const input = collectGenerateInput(workingElements, workingConnections, generateId);
+        const runIssue = getGenerateRunIssue(workingElements, workingConnections, generateId);
 
-        if (outputIds.length === 0) {
-          const message = "Connect at least one output node before running this generate node.";
-          setNodeState(generateId, { status: "error", error: message });
+        if (runIssue) {
+          const title = outputIds.length === 0 ? "Generate needs an output" : "Generate needs an input";
+          setNodeState(generateId, { status: "error", error: runIssue });
+          outputIds.forEach((id) => setNodeState(id, { status: "error", error: runIssue }));
           flushRunState();
           addToast({
-            title: "Generate needs an output",
-            message,
-            variant: "warning",
-          });
-          anyError = true;
-          continue;
-        }
-
-        if (!input.prompt && !input.mediaUrl) {
-          const message = "Connect at least one prompt or source before running this generate node.";
-          setNodeState(generateId, { status: "error", error: message });
-          outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
-          flushRunState();
-          addToast({
-            title: "Generate needs an input",
-            message,
+            title,
+            message: runIssue,
             variant: "warning",
           });
           anyError = true;

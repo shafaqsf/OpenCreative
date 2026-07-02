@@ -7,6 +7,7 @@ import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 import { useCanvas } from "@/lib/canvas/context";
 import { getGenerationModel } from "@/lib/canvas/generation-models";
+import { getGenerateRunIssue } from "@/lib/canvas/workflow-engine";
 
 const NODE_COLORS: Record<NodeType, string> = {
   prompt: "#fafafa",
@@ -160,7 +161,7 @@ function WorkflowNode({
   const strokeColor =
     status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : border;
   const strokeW = status === "running" ? 2 : 1.5;
-  const { runWorkflow, selectedIds } = useCanvas();
+  const { elements, connections, runWorkflow, selectedIds } = useCanvas();
 
   const sourceUrl = nodeType === "source" ? nodeData.properties.url?.trim() : undefined;
   const selectedOutputIndex = getSelectedOutputIndex(nodeData);
@@ -177,6 +178,8 @@ function WorkflowNode({
   const isSelected = selectedIds.includes(element.id);
   const promptContent = nodeType === "prompt" ? nodeData.properties.content?.trim() : "";
   const generationModel = nodeType === "generate" ? getGenerationModel(nodeData.properties.model) : null;
+  const generateRunIssue =
+    nodeType === "generate" ? getGenerateRunIssue(elements, connections, element.id) : undefined;
 
   return (
     <g>
@@ -375,6 +378,11 @@ function WorkflowNode({
                   <span style={{ fontSize: 10, color: "#a3a3a3", textTransform: "capitalize" }}>
                     {generationModel?.outputType}
                   </span>
+                  {generateRunIssue && (
+                    <span style={{ fontSize: 9, color: "#dc2626", textAlign: "center", lineHeight: 1.25 }}>
+                      {generateRunIssue.includes("output") ? "Connect Output" : "Connect Input"}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {

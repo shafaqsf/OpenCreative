@@ -194,6 +194,23 @@ export function collectGenerateInput(
   };
 }
 
+export function getGenerateRunIssue(
+  elements: CanvasElement[],
+  connections: Connection[],
+  generateId: string
+): string | undefined {
+  if (getConnectedOutputIds(elements, connections, generateId).length === 0) {
+    return "Connect at least one output node before running this generate node.";
+  }
+
+  const input = collectGenerateInput(elements, connections, generateId);
+  if (!input.prompt && !input.mediaUrl) {
+    return "Connect at least one prompt or source before running this generate node.";
+  }
+
+  return undefined;
+}
+
 export function getConnectedOutputIds(
   elements: CanvasElement[],
   connections: Connection[],
