@@ -19,6 +19,8 @@ import {
   ArchiveRestore,
   Copy,
   Pin,
+  Check,
+  X,
 } from "lucide-react";
 import type { Folder as FolderType, Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
@@ -57,6 +59,8 @@ export function DashboardContent({
   const [sort, setSort] = useState<SortKey>("recent");
   const [view, setView] = useState<ViewMode>("grid");
   const [showArchived, setShowArchived] = useState(false);
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [folderDraft, setFolderDraft] = useState("");
 
   const filteredProjects = useMemo(() => {
     let result = allProjects.filter((p) => {
@@ -76,9 +80,16 @@ export function DashboardContent({
     return result;
   }, [allProjects, query, sort, showArchived]);
 
-  function renameFolder(folder: FolderType) {
-    const name = window.prompt("Rename folder", folder.name)?.trim();
+  function startRenameFolder(folder: FolderType) {
+    setEditingFolderId(folder.id);
+    setFolderDraft(folder.name);
+  }
+
+  function commitRenameFolder(folder: FolderType) {
+    const name = folderDraft.trim();
     if (name && name !== folder.name) onRenameFolder?.(folder.id, name);
+    setEditingFolderId(null);
+    setFolderDraft("");
   }
 
   const filteredFolders = useMemo(
@@ -166,24 +177,46 @@ export function DashboardContent({
                   key={folder.id}
                   className="group relative"
                 >
-                  <Link
-                    href={`/folder/${folder.id}`}
-                    className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-900"
-                  >
-                    <FolderOpen className="size-5 text-neutral-400" />
-                    <div>
-                      <p className="text-sm font-medium text-neutral-900">
-                        {folder.name}
-                      </p>
-                      <p className="text-xs text-neutral-500">
-                        {count} project{count !== 1 ? "s" : ""}
-                      </p>
+                  {editingFolderId === folder.id ? (
+                    <div className="flex items-center gap-3 rounded-xl border border-neutral-300 bg-white p-4">
+                      <FolderOpen className="size-5 text-neutral-400" />
+                      <input
+                        autoFocus
+                        value={folderDraft}
+                        onChange={(e) => setFolderDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitRenameFolder(folder);
+                          if (e.key === "Escape") setEditingFolderId(null);
+                        }}
+                        className="min-w-0 flex-1 rounded-md border border-neutral-200 px-2 py-1 text-sm outline-none focus:border-neutral-400"
+                      />
+                      <button onClick={() => commitRenameFolder(folder)} className="rounded p-1 text-neutral-500 hover:text-neutral-900" title="Save folder name">
+                        <Check className="size-3.5" />
+                      </button>
+                      <button onClick={() => setEditingFolderId(null)} className="rounded p-1 text-neutral-500 hover:text-neutral-900" title="Cancel rename">
+                        <X className="size-3.5" />
+                      </button>
                     </div>
-                  </Link>
+                  ) : (
+                    <Link
+                      href={`/folder/${folder.id}`}
+                      className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 hover:border-neutral-900"
+                    >
+                      <FolderOpen className="size-5 text-neutral-400" />
+                      <div>
+                        <p className="text-sm font-medium text-neutral-900">
+                          {folder.name}
+                        </p>
+                        <p className="text-xs text-neutral-500">
+                          {count} project{count !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </Link>
+                  )}
                   <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    {onRenameFolder && (
+                    {onRenameFolder && editingFolderId !== folder.id && (
                       <button
-                        onClick={() => renameFolder(folder)}
+                        onClick={() => startRenameFolder(folder)}
                         className="rounded p-1 text-neutral-400 hover:bg-white hover:text-neutral-900"
                         title="Rename folder"
                       >
@@ -282,6 +315,8 @@ function ProjectMenu({
   onMoveProject?: (id: string, folderId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(project.name);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -300,9 +335,10 @@ function ProjectMenu({
   const isArchived = Boolean(project.config?.archived);
   const isPinned = Boolean(project.config?.pinned);
 
-  function renameProject() {
-    const name = window.prompt("Rename project", project.name)?.trim();
+  function commitRenameProject() {
+    const name = draft.trim();
     if (name && name !== project.name) onRenameProject?.(project.id, name);
+    setRenaming(false);
     setOpen(false);
   }
 
@@ -323,16 +359,35 @@ function ProjectMenu({
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
           {onRenameProject && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                renameProject();
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100"
-            >
-              <Pencil className="size-3.5 text-neutral-400" />
-              Rename project
-            </button>
+            renaming ? (
+              <div className="flex items-center gap-1 px-2 py-1.5">
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRenameProject();
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                  className="min-w-0 flex-1 rounded-md border border-neutral-200 px-2 py-1 text-xs outline-none focus:border-neutral-400"
+                />
+                <button onClick={commitRenameProject} className="rounded p-1 text-neutral-500 hover:text-neutral-900" title="Save name">
+                  <Check className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDraft(project.name);
+                  setRenaming(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+              >
+                <Pencil className="size-3.5 text-neutral-400" />
+                Rename project
+              </button>
+            )
           )}
           {onPinProject && !isArchived && (
             <button

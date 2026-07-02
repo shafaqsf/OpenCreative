@@ -25,6 +25,7 @@ import {
   Sparkles,
   RotateCcw,
   Redo,
+  Undo,
   Trash2,
   Copy,
   ZoomIn,
@@ -59,45 +60,65 @@ import type { Project } from "@/lib/projects/service";
 import type { NodeStatus, WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
-  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
   const [autoSave, setAutoSave] = useState(true);
   const autoSaveRef = useRef(autoSave);
   autoSaveRef.current = autoSave;
   const latestStateRef = useRef<WorkflowState | null>(null);
   const saveStateRef = useRef<"idle" | "scheduled" | "saving">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { addToast } = useToast();
+  const lastSavedStateRef = useRef(JSON.stringify(project.workflow));
+  const pendingAfterSaveRef = useRef(false);
 
   const scheduleSave = useCallback(() => {
-    if (saveStateRef.current === "saving") return;
+    if (saveStateRef.current === "saving") {
+      pendingAfterSaveRef.current = true;
+      setSaveStatus("pending");
+      return;
+    }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveStateRef.current = "scheduled";
+    setSaveStatus("pending");
     saveTimerRef.current = setTimeout(async () => {
       const state = latestStateRef.current;
       if (!state || !autoSaveRef.current) {
         saveStateRef.current = "idle";
         return;
       }
+      const serialized = JSON.stringify(state);
+      if (serialized === lastSavedStateRef.current) {
+        saveStateRef.current = "idle";
+        setSaveStatus("saved");
+        return;
+      }
       saveStateRef.current = "saving";
-      setSaving(true);
+      pendingAfterSaveRef.current = false;
+      setSaveStatus("saving");
       const stateAtStart = latestStateRef.current;
       try {
         await updateProjectWorkflow(project.id, state);
+        lastSavedStateRef.current = serialized;
+        setSaveStatus("saved");
       } catch {
-        addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
+        setSaveStatus("error");
       } finally {
-        setSaving(false);
         saveStateRef.current = "idle";
-        if (latestStateRef.current !== stateAtStart) {
+        if (pendingAfterSaveRef.current || latestStateRef.current !== stateAtStart) {
           scheduleSave();
         }
       }
-    }, 600);
-  }, [project.id, addToast]);
+    }, 1000);
+  }, [project.id]);
 
   const handleChange = useCallback(
     (state: WorkflowState) => {
       latestStateRef.current = state;
+      const serialized = JSON.stringify(state);
+      if (serialized === lastSavedStateRef.current) {
+        setSaveStatus("saved");
+        return;
+      }
+      setSaveStatus("pending");
       if (!autoSaveRef.current) return;
       scheduleSave();
     },
@@ -107,22 +128,23 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   const manualSave = useCallback(async () => {
     if (!latestStateRef.current) return;
     if (saveStateRef.current === "saving") {
-      addToast({ title: "Save in progress", message: "Please wait for the current save to finish.", variant: "info" });
+      setSaveStatus("saving");
       return;
     }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveStateRef.current = "saving";
-    setSaving(true);
+    setSaveStatus("saving");
+    const serialized = JSON.stringify(latestStateRef.current);
     try {
       await updateProjectWorkflow(project.id, latestStateRef.current);
-      addToast({ title: "Saved", message: "Project saved successfully.", variant: "success" });
+      lastSavedStateRef.current = serialized;
+      setSaveStatus("saved");
     } catch {
-      addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
+      setSaveStatus("error");
     } finally {
-      setSaving(false);
       saveStateRef.current = "idle";
     }
-  }, [project.id, addToast]);
+  }, [project.id]);
 
   useEffect(() => {
     return () => {
@@ -134,7 +156,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
     <CanvasProvider initial={project.workflow} onChange={handleChange}>
       <ProjectCanvasInner
         project={project}
-        saving={saving}
+        saveStatus={saveStatus}
         autoSave={autoSave}
         onToggleAutoSave={setAutoSave}
         onManualSave={manualSave}
@@ -145,13 +167,13 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
 
 function ProjectCanvasInner({
   project,
-  saving,
+  saveStatus,
   autoSave,
   onToggleAutoSave,
   onManualSave,
 }: {
   project: Project;
-  saving: boolean;
+  saveStatus: "saved" | "pending" | "saving" | "error";
   autoSave: boolean;
   onToggleAutoSave: (value: boolean) => void;
   onManualSave: () => void;
@@ -674,19 +696,34 @@ function ProjectCanvasInner({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 rounded-md border border-neutral-200 bg-white p-0.5">
+            <button
+              onClick={undo}
+              disabled={!canUndo}
+              className="flex size-7 items-center justify-center rounded text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 disabled:text-neutral-300 disabled:hover:bg-transparent"
+              title="Undo"
+              aria-label="Undo"
+            >
+              <Undo className="size-3.5" />
+            </button>
+            <button
+              onClick={redo}
+              disabled={!canRedo}
+              className="flex size-7 items-center justify-center rounded text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 disabled:text-neutral-300 disabled:hover:bg-transparent"
+              title="Redo"
+              aria-label="Redo"
+            >
+              <Redo className="size-3.5" />
+            </button>
+          </div>
           <button
             onClick={() => {
               const next = !autoSave;
               onToggleAutoSave(next);
-              if (!next) {
-                addToast({
-                  title: "Auto-save disabled",
-                  message: "Remember to save your work manually.",
-                  variant: "info",
-                });
-              }
             }}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-neutral-100"
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
+              autoSave ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+            }`}
             title={
               autoSave
                 ? "Auto-save is on. Click to disable."
@@ -702,20 +739,46 @@ function ProjectCanvasInner({
           </button>
 
           {!autoSave && (
-            <button
-              onClick={onManualSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50"
-            >
-              <Save className="size-3" />
-              {saving ? "Saving…" : "Save"}
-            </button>
+            <>
+              <button
+                onClick={onManualSave}
+                disabled={saveStatus === "saving" || saveStatus === "saved"}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50"
+              >
+                {saveStatus === "saving" ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Retry save" : "Save"}
+              </button>
+              <span
+                className={`text-xs ${
+                  saveStatus === "error"
+                    ? "text-red-600"
+                    : saveStatus === "pending"
+                      ? "text-neutral-500"
+                      : "text-neutral-400"
+                }`}
+              >
+                {saveStatus === "pending" && "Unsaved changes"}
+                {saveStatus === "saved" && "Saved"}
+                {saveStatus === "error" && "Save failed"}
+              </span>
+            </>
           )}
 
-          {saving && autoSave && (
-            <span className="flex items-center gap-1.5 text-xs text-neutral-400">
-              <Loader2 className="size-3 animate-spin" />
-              Saving…
+          {autoSave && (
+            <span
+              className={`flex items-center gap-1.5 text-xs ${
+                saveStatus === "error"
+                  ? "text-red-600"
+                  : saveStatus === "saved"
+                    ? "text-neutral-400"
+                    : "text-neutral-500"
+              }`}
+            >
+              {saveStatus === "saving" && <Loader2 className="size-3 animate-spin" />}
+              {saveStatus === "pending" && "Unsaved changes"}
+              {saveStatus === "saving" && "Saving..."}
+              {saveStatus === "saved" && "Saved"}
+              {saveStatus === "error" && "Save failed"}
             </span>
           )}
 

@@ -66,21 +66,38 @@ export function useHistory<T>(
   );
 
   const undo = useCallback(() => {
-    if (historyStateRef.current.past.length === 0) return;
-    setPast((prev) => prev.slice(0, -1));
-    setFuture((prev) => [historyStateRef.current.present, ...prev]);
-    setPresent(historyStateRef.current.past[historyStateRef.current.past.length - 1]);
+    const currentState = historyStateRef.current;
+    if (currentState.past.length === 0) return;
+    const previous = currentState.past[currentState.past.length - 1];
+    const nextPast = currentState.past.slice(0, -1);
+    const nextFuture = [currentState.present, ...currentState.future];
+    historyStateRef.current = {
+      past: nextPast,
+      present: previous,
+      future: nextFuture,
+    };
+    setPast(nextPast);
+    setFuture(nextFuture);
+    setPresent(previous);
   }, []);
 
   const redo = useCallback(() => {
-    if (historyStateRef.current.future.length === 0) return;
-    const [next, ...rest] = historyStateRef.current.future;
-    setPast((prev) => [...prev, historyStateRef.current.present]);
+    const currentState = historyStateRef.current;
+    if (currentState.future.length === 0) return;
+    const [next, ...rest] = currentState.future;
+    const nextPast = [...currentState.past, currentState.present];
+    historyStateRef.current = {
+      past: nextPast,
+      present: next,
+      future: rest,
+    };
+    setPast(nextPast);
     setFuture(rest);
     setPresent(next);
   }, []);
 
   const reset = useCallback((state: T) => {
+    historyStateRef.current = { past: [], present: state, future: [] };
     setPast([]);
     setFuture([]);
     setPresent(state);

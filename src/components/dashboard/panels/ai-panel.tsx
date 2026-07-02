@@ -4,14 +4,13 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   Archive,
   ArchiveRestore,
+  Check,
   ChevronUp,
   Loader2,
   MessageSquare,
-  MoreHorizontal,
   Pencil,
   Pin,
   Plus,
-  RotateCcw,
   Send,
   Sparkles,
   Trash2,
@@ -20,7 +19,7 @@ import {
 import { newElement, newNode, uid, useCanvas } from "@/lib/canvas/context";
 import { useToast } from "@/lib/toast/context";
 import type { AgentAction, AgentMessage, AgentResponse } from "@/types/agent";
-import type { ToolId, WorkflowState } from "@/types/canvas";
+import type { ToolId } from "@/types/canvas";
 import {
   listAgentChats,
   createAgentChat,
@@ -28,10 +27,10 @@ import {
   deleteAgentChat,
   listAgentMessages,
   createAgentMessage,
-  listAgentCheckpoints,
-  createAgentCheckpoint,
-  getAgentCheckpoint,
 } from "@/lib/projects/client-service";
+import { cloneElements } from "@/lib/canvas/clone";
+import { canConnectNodes } from "@/lib/canvas/workflow-engine";
+import type { CanvasElement, Connection } from "@/types/canvas";
 
 type LocalChat = {
   id: string;
@@ -69,17 +68,10 @@ export function AIPanel({
     activeTool,
     snapToGrid,
     showGrid,
-    addElements,
-    addConnection,
-    removeElements,
-    duplicateSelection,
-    renameElement,
     runWorkflow,
     setActiveTool,
     setCamera,
-    replaceWorkflow,
     commitWorkflowGraph,
-    updateNodeProperties,
   } = useCanvas();
 
   const { addToast } = useToast();
@@ -91,8 +83,9 @@ export function AIPanel({
   const [chats, setChats] = useState<LocalChat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [messagesMap, setMessagesMap] = useState<Record<string, AgentMessage[]>>({});
-  const [checkpointsMap, setCheckpointsMap] = useState<Record<string, { id: string; messageId: string; label: string }[]>>({});
   const [storeLoading, setStoreLoading] = useState(true);
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   const isLocal = projectId === "local";
   const localStorageKey = `opencreative:agent:${projectId}`;
@@ -110,7 +103,6 @@ export function AIPanel({
               setChats(parsed.chats);
               setActiveChatId(parsed.activeChatId ?? parsed.chats[0].id);
               if (parsed.messagesMap) setMessagesMap(parsed.messagesMap);
-              if (parsed.checkpointsMap) setCheckpointsMap(parsed.checkpointsMap);
               if (parsed.messagesMap?.[parsed.activeChatId]?.length > 0) {
                 setTranscriptOpen(true);
               }
@@ -144,10 +136,7 @@ export function AIPanel({
           setChats(localChats);
           const first = localChats[0];
           setActiveChatId(first.id);
-          const [msgs, cps] = await Promise.all([
-            listAgentMessages(first.id),
-            listAgentCheckpoints(first.id),
-          ]);
+          const msgs = await listAgentMessages(first.id);
           if (cancelled) return;
           setMessagesMap((prev) => ({
             ...prev,
@@ -156,14 +145,6 @@ export function AIPanel({
               role: m.role,
               content: m.content,
               createdAt: m.created_at,
-            })),
-          }));
-          setCheckpointsMap((prev) => ({
-            ...prev,
-            [first.id]: cps.map((c) => ({
-              id: c.id,
-              messageId: c.message_id,
-              label: c.label ?? "Before agent actions",
             })),
           }));
           if (msgs.length > 0) setTranscriptOpen(true);
@@ -207,7 +188,7 @@ export function AIPanel({
     try {
       window.localStorage.setItem(
         localStorageKey,
-        JSON.stringify({ activeChatId, chats, messagesMap, checkpointsMap })
+        JSON.stringify({ activeChatId, chats, messagesMap })
       );
     } catch {
       addToast({
@@ -216,11 +197,11 @@ export function AIPanel({
         variant: "warning",
       });
     }
-  }, [isLocal, localStorageKey, activeChatId, chats, messagesMap, checkpointsMap, storeLoading, addToast]);
+  }, [isLocal, localStorageKey, activeChatId, chats, messagesMap, storeLoading, addToast]);
 
   const loadedChatIdsRef = useRef<Set<string>>(new Set());
 
-  // Load messages & checkpoints when active chat changes (DB only)
+  // Load messages when active chat changes (DB only)
   useEffect(() => {
     const chatId = activeChatId;
     if (!chatId || isLocal || storeLoading) return;
@@ -228,10 +209,7 @@ export function AIPanel({
     let cancelled = false;
     async function load(id: string) {
       try {
-        const [msgs, cps] = await Promise.all([
-          listAgentMessages(id),
-          listAgentCheckpoints(id),
-        ]);
+        const msgs = await listAgentMessages(id);
         if (cancelled) return;
         loadedChatIdsRef.current.add(id);
         setMessagesMap((prev) => ({
@@ -241,14 +219,6 @@ export function AIPanel({
             role: m.role,
             content: m.content,
             createdAt: m.created_at,
-          })),
-        }));
-        setCheckpointsMap((prev) => ({
-          ...prev,
-          [id]: cps.map((c) => ({
-            id: c.id,
-            messageId: c.message_id,
-            label: c.label ?? "Before agent actions",
           })),
         }));
       } catch (err) {
@@ -273,10 +243,6 @@ export function AIPanel({
   const activeMessages = useMemo(() => {
     return activeChat ? (messagesMap[activeChat.id] ?? []) : [];
   }, [activeChat, messagesMap]);
-
-  const activeCheckpoints = useMemo(() => {
-    return activeChat ? (checkpointsMap[activeChat.id] ?? []) : [];
-  }, [activeChat, checkpointsMap]);
 
   const visibleChats = useMemo(() => {
     return [...chats]
@@ -393,142 +359,222 @@ export function AIPanel({
     }
   }
 
-  function renameChat(chat: LocalChat) {
-    const title = window.prompt("Rename chat", chat.title)?.trim();
-    if (title) handleUpdateChat(chat.id, { title });
+  function startRenameChat(chat: LocalChat) {
+    setEditingChatId(chat.id);
+    setRenameDraft(chat.title);
   }
 
-  async function restoreCheckpoint(checkpointId: string) {
-    try {
-      const cp = await getAgentCheckpoint(checkpointId);
-      if (!cp) {
-        addToast({ title: "Checkpoint missing", message: "Could not find checkpoint.", variant: "error" });
-        return;
-      }
-      replaceWorkflow(cp.workflow_state);
-      addToast({ title: "Checkpoint restored", message: "Workflow reverted to checkpoint state.", variant: "success" });
-    } catch (err) {
-      addToast({
-        title: "Restore failed",
-        message: err instanceof Error ? err.message : "Could not restore checkpoint.",
-        variant: "error",
-      });
+  function cancelRenameChat() {
+    setEditingChatId(null);
+    setRenameDraft("");
+  }
+
+  function commitRenameChat(chat: LocalChat) {
+    const title = renameDraft.trim();
+    if (title && title !== chat.title) {
+      handleUpdateChat(chat.id, { title });
     }
+    cancelRenameChat();
   }
 
-  async function executeAction(action: AgentAction) {
-    switch (action.type) {
-      case "create_nodes": {
-        const created = action.nodes.map((node) => {
-          const el = newNode(node.type, node.x, node.y);
-          el.nodeData!.properties = {
-            ...el.nodeData!.properties,
-            ...(node.properties ?? {}),
-          };
-          return el;
-        });
-        const createdConnections = (action.connections ?? []).flatMap((connection) => {
-          const from = created[connection.from];
-          const to = created[connection.to];
-          return from && to ? [{ id: uid(), fromId: from.id, toId: to.id }] : [];
-        });
-        addElements(created, createdConnections);
-        addToast({
-          title: "Agent updated canvas",
-          message: `Created ${created.length} node${created.length === 1 ? "" : "s"}.`,
-          variant: "success",
-        });
-        return;
-      }
-      case "move_nodes": {
-        const nextElements = elements.map((el) => {
-          const update = action.nodes.find((n) => n.id === el.id);
-          if (!update) return el;
-          if (el.points) {
-            const dx = update.x - el.x;
-            const dy = update.y - el.y;
+  function cloneGraphElements(source: CanvasElement[]): CanvasElement[] {
+    return source.map((el) => {
+      const clone: CanvasElement = {
+        ...el,
+        points: el.points?.map((point) => ({ ...point })),
+        nodeData: el.nodeData
+          ? {
+              ...el.nodeData,
+              properties: { ...el.nodeData.properties },
+              outputUrls: el.nodeData.outputUrls ? [...el.nodeData.outputUrls] : undefined,
+            }
+          : undefined,
+      };
+      return clone;
+    });
+  }
+
+  function applyAgentActions(actions: AgentAction[]) {
+    let nextElements = cloneGraphElements(elements);
+    let nextConnections: Connection[] = connections.map((connection) => ({ ...connection }));
+    let graphChanged = false;
+    let shouldRunWorkflow = false;
+    let createdNodes = 0;
+    let createdAnnotations = 0;
+    let movedNodes = 0;
+    let addedConnections = 0;
+    let updatedNodes = 0;
+    let deletedItems = 0;
+    let duplicatedItems = 0;
+    let renamedItems = 0;
+
+    const selectedSet = new Set(selectedIds);
+
+    for (const action of actions) {
+      switch (action.type) {
+        case "create_nodes": {
+          const created = action.nodes.map((node) => {
+            const el = newNode(node.type, node.x, node.y);
+            el.nodeData!.properties = {
+              ...el.nodeData!.properties,
+              ...(node.properties ?? {}),
+            };
+            return el;
+          });
+          nextElements = [...nextElements, ...created];
+          createdNodes += created.length;
+          graphChanged = graphChanged || created.length > 0;
+
+          for (const connection of action.connections ?? []) {
+            const from = created[connection.from];
+            const to = created[connection.to];
+            if (!from || !to) continue;
+            if (!canConnectNodes(nextElements, nextConnections, from.id, to.id).ok) continue;
+            nextConnections = [...nextConnections, { id: uid(), fromId: from.id, toId: to.id }];
+            addedConnections++;
+            graphChanged = true;
+          }
+          break;
+        }
+        case "move_nodes": {
+          let moved = 0;
+          nextElements = nextElements.map((el) => {
+            const update = action.nodes.find((node) => node.id === el.id);
+            if (!update) return el;
+            moved++;
+            if (el.points) {
+              const dx = update.x - el.x;
+              const dy = update.y - el.y;
+              return {
+                ...el,
+                x: update.x,
+                y: update.y,
+                points: el.points.map((point) => ({ x: point.x + dx, y: point.y + dy })),
+              };
+            }
+            return { ...el, x: update.x, y: update.y };
+          });
+          movedNodes += moved;
+          graphChanged = graphChanged || moved > 0;
+          break;
+        }
+        case "connect_nodes": {
+          for (const connection of action.connections) {
+            if (!canConnectNodes(nextElements, nextConnections, connection.fromId, connection.toId).ok) continue;
+            nextConnections = [
+              ...nextConnections,
+              { id: uid(), fromId: connection.fromId, toId: connection.toId },
+            ];
+            addedConnections++;
+            graphChanged = true;
+          }
+          break;
+        }
+        case "update_node_properties": {
+          let updated = 0;
+          nextElements = nextElements.map((el) => {
+            if (el.id !== action.id || !el.nodeData) return el;
+            updated++;
             return {
               ...el,
-              x: update.x,
-              y: update.y,
-              points: el.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+              nodeData: {
+                ...el.nodeData,
+                properties: action.properties,
+              },
             };
-          }
-          return { ...el, x: update.x, y: update.y };
-        });
-        commitWorkflowGraph(nextElements, connections);
-        addToast({
-          title: "Agent updated canvas",
-          message: `Moved ${action.nodes.length} node${action.nodes.length === 1 ? "" : "s"}.`,
-          variant: "success",
-        });
-        return;
-      }
-      case "connect_nodes": {
-        let added = 0;
-        for (const conn of action.connections) {
-          if (addConnection(conn.fromId, conn.toId)) added++;
-        }
-        if (added > 0) {
-          addToast({
-            title: "Agent updated canvas",
-            message: `Connected ${added} node pair${added === 1 ? "" : "s"}.`,
-            variant: "success",
           });
+          updatedNodes += updated;
+          graphChanged = graphChanged || updated > 0;
+          break;
         }
-        return;
-      }
-      case "update_node_properties": {
-        updateNodeProperties(action.id, action.properties);
-        addToast({
-          title: "Agent updated node",
-          message: "Updated node properties.",
-          variant: "success",
-        });
-        return;
-      }
-      case "set_camera": {
-        setCamera({ x: action.x, y: action.y, zoom: action.zoom });
-        addToast({
-          title: "Agent updated view",
-          message: "Camera moved to new position.",
-          variant: "success",
-        });
-        return;
-      }
-      case "create_annotations": {
-        const created = action.annotations.map((ann) => {
-          const el = newElement(ann.type, ann.x, ann.y);
-          el.width = ann.width ?? (ann.type === "text" ? 160 : 120);
-          el.height = ann.height ?? (ann.type === "text" ? 40 : 80);
-          if (ann.text) el.text = ann.text;
-          return el;
-        });
-        addElements(created);
-        addToast({
-          title: "Agent updated canvas",
-          message: `Created ${created.length} annotation${created.length === 1 ? "" : "s"}.`,
-          variant: "success",
-        });
-        return;
-      }
-      case "run_workflow":
-        runWorkflow?.();
-        return;
-      case "select_tool":
-        setActiveTool(action.tool as ToolId);
-        return;
-      case "delete_selection":
-        if (selectedIds.length > 0) {
-          removeElements(selectedIds);
+        case "set_camera":
+          setCamera({ x: action.x, y: action.y, zoom: action.zoom });
+          break;
+        case "create_annotations": {
+          const created = action.annotations.map((ann) => {
+            const el = newElement(ann.type, ann.x, ann.y);
+            el.width = ann.width ?? (ann.type === "text" ? 160 : 120);
+            el.height = ann.height ?? (ann.type === "text" ? 40 : 80);
+            if (ann.text) el.text = ann.text;
+            return el;
+          });
+          nextElements = [...nextElements, ...created];
+          createdAnnotations += created.length;
+          graphChanged = graphChanged || created.length > 0;
+          break;
         }
-        return;
-      case "duplicate_selection":
-        duplicateSelection();
-        return;
-      case "rename_selection":
-        if (selectedIds.length === 1) renameElement(selectedIds[0], action.name);
-        return;
+        case "run_workflow":
+          shouldRunWorkflow = true;
+          break;
+        case "select_tool":
+          setActiveTool(action.tool as ToolId);
+          break;
+        case "delete_selection": {
+          if (selectedSet.size === 0) break;
+          const before = nextElements.length;
+          nextElements = nextElements.filter((el) => !selectedSet.has(el.id));
+          nextConnections = nextConnections.filter(
+            (connection) => !selectedSet.has(connection.fromId) && !selectedSet.has(connection.toId)
+          );
+          deletedItems += before - nextElements.length;
+          graphChanged = graphChanged || before !== nextElements.length;
+          break;
+        }
+        case "duplicate_selection": {
+          if (selectedSet.size === 0) break;
+          const idMap = new Map<string, string>();
+          const clones = cloneElements(
+            nextElements.filter((el) => selectedSet.has(el.id)),
+            20,
+            20,
+            idMap
+          );
+          nextElements = [...nextElements, ...clones];
+          duplicatedItems += clones.length;
+          graphChanged = graphChanged || clones.length > 0;
+          break;
+        }
+        case "rename_selection": {
+          if (selectedIds.length !== 1) break;
+          const id = selectedIds[0];
+          let renamed = 0;
+          nextElements = nextElements.map((el) => {
+            if (el.id !== id) return el;
+            renamed++;
+            return { ...el, customLabel: action.name };
+          });
+          renamedItems += renamed;
+          graphChanged = graphChanged || renamed > 0;
+          break;
+        }
+      }
+    }
+
+    if (graphChanged) {
+      commitWorkflowGraph(nextElements, nextConnections);
+    }
+
+    const summary: string[] = [];
+    if (createdNodes > 0) summary.push(`${createdNodes} node${createdNodes === 1 ? "" : "s"}`);
+    if (createdAnnotations > 0) summary.push(`${createdAnnotations} annotation${createdAnnotations === 1 ? "" : "s"}`);
+    if (movedNodes > 0) summary.push(`${movedNodes} moved`);
+    if (addedConnections > 0) summary.push(`${addedConnections} connection${addedConnections === 1 ? "" : "s"}`);
+    if (updatedNodes > 0) summary.push(`${updatedNodes} updated`);
+    if (deletedItems > 0) summary.push(`${deletedItems} deleted`);
+    if (duplicatedItems > 0) summary.push(`${duplicatedItems} duplicated`);
+    if (renamedItems > 0) summary.push(`${renamedItems} renamed`);
+
+    if (summary.length > 0) {
+      addToast({
+        title: "Agent updated canvas",
+        message: summary.join(", "),
+        variant: "success",
+        duration: 2500,
+      });
+    }
+
+    if (shouldRunWorkflow) {
+      window.setTimeout(() => runWorkflow?.(), 0);
     }
   }
 
@@ -600,47 +646,7 @@ export function AIPanel({
       ];
       setMessagesMap((prev) => ({ ...prev, [activeChat.id]: finalMessages }));
 
-      // Save checkpoint before executing actions
-      const currentWorkflow: WorkflowState = {
-        elements,
-        connections,
-        camera,
-        ui: { snapToGrid, showGrid },
-      };
-
-      if (!isLocal && assistantDbId) {
-        try {
-          const cp = await createAgentCheckpoint({
-            chatId: activeChat.id,
-            messageId: assistantDbId,
-            label: "Before agent actions",
-            workflowState: currentWorkflow,
-          });
-          // Attach checkpoint id to the assistant message for UI
-          setMessagesMap((prev) => {
-            const arr = prev[activeChat.id] ?? [];
-            const idx = arr.findIndex((m) => m.id === assistantDbId);
-            if (idx === -1) return prev;
-            const next = [...arr];
-            next[idx] = { ...next[idx], checkpointId: cp.id };
-            return { ...prev, [activeChat.id]: next };
-          });
-          setCheckpointsMap((prev) => ({
-            ...prev,
-            [activeChat.id]: [
-              ...(prev[activeChat.id] ?? []),
-              { id: cp.id, messageId: assistantDbId, label: cp.label ?? "Before agent actions" },
-            ],
-          }));
-        } catch (err) {
-          addToast({ title: "Checkpoint failed", message: err instanceof Error ? err.message : "", variant: "warning" });
-        }
-      }
-
-      // Execute actions
-      for (const action of json.actions ?? []) {
-        await executeAction(action);
-      }
+      applyAgentActions(json.actions ?? []);
     } catch (err) {
       addToast({
         title: "Agent error",
@@ -692,21 +698,6 @@ export function AIPanel({
                   >
                     {message.content}
                   </div>
-                  {(() => {
-                    const cpId =
-                      message.checkpointId ??
-                      activeCheckpoints.find((c) => c.messageId === message.id)?.id;
-                    return cpId ? (
-                      <button
-                        onClick={() => restoreCheckpoint(cpId)}
-                        className="mt-1 flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-900"
-                        title="Revert workflow to state before this agent response"
-                      >
-                        <RotateCcw className="size-3" />
-                        Restore checkpoint
-                      </button>
-                    ) : null;
-                  })()}
                 </div>
               ))
             )}
@@ -752,45 +743,78 @@ export function AIPanel({
                     chat.id === activeChat.id ? "bg-neutral-100" : "hover:bg-neutral-50"
                   }`}
                 >
-                  <button
-                    onClick={() => {
-                      setActiveChatId(chat.id);
-                      setMenuOpen(false);
-                      setTranscriptOpen((messagesMap[chat.id] ?? []).length > 0);
-                    }}
-                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
-                  >
-                    {chat.pinned ? <Pin className="size-3.5 fill-neutral-900" /> : <MessageSquare className="size-3.5 text-neutral-400" />}
-                    <span className="truncate text-xs text-neutral-800">{chat.title}</span>
-                  </button>
-                  <button
-                    onClick={() => handleUpdateChat(chat.id, { pinned: !chat.pinned })}
-                    className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
-                    title={chat.pinned ? "Unpin chat" : "Pin chat"}
-                  >
-                    <Pin className={`size-3.5 ${chat.pinned ? "fill-neutral-900 text-neutral-900" : ""}`} />
-                  </button>
-                  <button
-                    onClick={() => renameChat(chat)}
-                    className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
-                    title="Rename chat"
-                  >
-                    <Pencil className="size-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleUpdateChat(chat.id, { archived: !chat.archived })}
-                    className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
-                    title={chat.archived ? "Restore chat" : "Archive chat"}
-                  >
-                    {chat.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
-                  </button>
-                  <button
-                    onClick={() => handleDeleteChat(chat.id)}
-                    className="rounded p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
-                    title="Delete chat"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
+                  {editingChatId === chat.id ? (
+                    <>
+                      <input
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitRenameChat(chat);
+                          if (e.key === "Escape") cancelRenameChat();
+                        }}
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-900 outline-none focus:border-neutral-400"
+                      />
+                      <button
+                        onClick={() => commitRenameChat(chat)}
+                        className="rounded p-1 text-neutral-500 hover:text-neutral-900"
+                        title="Save name"
+                        aria-label="Save name"
+                      >
+                        <Check className="size-3.5" />
+                      </button>
+                      <button
+                        onClick={cancelRenameChat}
+                        className="rounded p-1 text-neutral-500 hover:text-neutral-900"
+                        title="Cancel rename"
+                        aria-label="Cancel rename"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => {
+                          setActiveChatId(chat.id);
+                          setMenuOpen(false);
+                          setTranscriptOpen((messagesMap[chat.id] ?? []).length > 0);
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+                      >
+                        {chat.pinned ? <Pin className="size-3.5 fill-neutral-900" /> : <MessageSquare className="size-3.5 text-neutral-400" />}
+                        <span className="truncate text-xs text-neutral-800">{chat.title}</span>
+                      </button>
+                      <button
+                        onClick={() => handleUpdateChat(chat.id, { pinned: !chat.pinned })}
+                        className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                        title={chat.pinned ? "Unpin chat" : "Pin chat"}
+                      >
+                        <Pin className={`size-3.5 ${chat.pinned ? "fill-neutral-900 text-neutral-900" : ""}`} />
+                      </button>
+                      <button
+                        onClick={() => startRenameChat(chat)}
+                        className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                        title="Rename chat"
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleUpdateChat(chat.id, { archived: !chat.archived })}
+                        className="rounded p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                        title={chat.archived ? "Restore chat" : "Archive chat"}
+                      >
+                        {chat.archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteChat(chat.id)}
+                        className="rounded p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
+                        title="Delete chat"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </>
+                  )}
                 </div>
               ))
             )}
@@ -800,21 +824,31 @@ export function AIPanel({
 
       <form
         onSubmit={submit}
-        className="flex items-end gap-2 rounded-2xl border border-neutral-200 bg-white p-2 shadow-2xl shadow-black/15"
+        className="flex min-h-14 items-center gap-1.5 rounded-2xl border border-neutral-200 bg-white p-2 shadow-2xl shadow-black/15"
       >
         <button
           type="button"
           onClick={() => setMenuOpen((value) => !value)}
-          className="flex size-10 shrink-0 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+          className={`flex size-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+            menuOpen
+              ? "bg-neutral-900 text-white"
+              : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+          }`}
           title="Chats"
+          aria-label="Chats"
         >
           <MessageSquare className="size-5" />
         </button>
         <button
           type="button"
           onClick={() => setTranscriptOpen((value) => !value)}
-          className="flex size-10 shrink-0 items-center justify-center rounded-xl text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+          className={`flex size-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+            transcriptOpen
+              ? "bg-neutral-100 text-neutral-950"
+              : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+          }`}
           title="Transcript"
+          aria-label="Transcript"
         >
           <ChevronUp className={`size-5 transition-transform ${transcriptOpen ? "rotate-180" : ""}`} />
         </button>
@@ -830,13 +864,14 @@ export function AIPanel({
           disabled={activeChat.archived}
           placeholder={activeChat.archived ? "Restore this chat to continue" : "Ask OpenCreative Agent to build or change the workflow..."}
           rows={1}
-          className="max-h-28 min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 disabled:text-neutral-400"
+          className="max-h-24 min-h-10 min-w-0 flex-1 resize-none overflow-hidden bg-transparent px-2 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 disabled:text-neutral-400"
         />
         <button
           type="submit"
           disabled={loading || !prompt.trim() || activeChat.archived}
-          className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:bg-neutral-200 disabled:text-neutral-400"
           title="Send"
+          aria-label="Send"
         >
           {loading ? <Loader2 className="size-5 animate-spin" /> : <Send className="size-5" />}
         </button>
