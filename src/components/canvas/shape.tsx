@@ -163,7 +163,10 @@ function WorkflowNode({
   const { runWorkflow, selectedIds } = useCanvas();
 
   const sourceUrl = nodeType === "source" ? nodeData.properties.url?.trim() : undefined;
-  const displayUrl = outputUrl || (outputUrls && outputUrls.length > 0 ? outputUrls[0] : undefined);
+  const selectedOutputIndex = getSelectedOutputIndex(nodeData);
+  const displayUrl = outputUrls && outputUrls.length > 0
+    ? outputUrls[selectedOutputIndex] ?? outputUrls[0]
+    : outputUrl;
   const mediaUrl = sourceUrl || displayUrl;
   const outputType = nodeData.properties.outputType || nodeData.properties.fileType;
   const showMedia =
@@ -346,7 +349,7 @@ function WorkflowNode({
                   outputUrls={outputUrls}
                   nodeData={nodeData}
                   elementId={element.id}
-                  index={0}
+                  index={selectedOutputIndex}
                 />
               )}
             </div>
@@ -471,6 +474,14 @@ function WorkflowNode({
   );
 }
 
+function getSelectedOutputIndex(nodeData: NodeData) {
+  const outputCount = nodeData.outputUrls?.length ?? 0;
+  if (outputCount === 0) return 0;
+  const parsed = Number.parseInt(nodeData.properties.selectedOutputIndex ?? "0", 10);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(Math.max(parsed, 0), outputCount - 1);
+}
+
 function starPoints(cx: number, cy: number, rx: number, ry: number) {
   const outer: [number, number][] = [];
   const inner: [number, number][] = [];
@@ -530,6 +541,7 @@ function OutputNodeControls({
   const { updateNodeProperties } = useCanvas();
   const fmtKey = `fmt_${index}`;
   const nameKey = `name_${index}`;
+  const options = outputUrls && outputUrls.length > 0 ? outputUrls : [url];
   const isVideo = nodeData.properties.outputType === "video";
   const format = nodeData.properties[fmtKey] || (isVideo ? "mp4" : "png");
   const [renaming, setRenaming] = useState(false);
@@ -538,6 +550,35 @@ function OutputNodeControls({
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+      {options.length > 1 && (
+        <select
+          value={String(index)}
+          onChange={(e) => {
+            const selectedOutputIndex = e.target.value;
+            updateNodeProperties(elementId, {
+              ...nodeData.properties,
+              selectedOutputIndex,
+            });
+          }}
+          title="Selected media for downstream nodes"
+          style={{
+            fontSize: 10,
+            padding: "1px 4px",
+            borderRadius: 4,
+            border: "1px solid #e5e5e5",
+            background: "#fff",
+            outline: "none",
+            cursor: "pointer",
+            width: 44,
+          }}
+        >
+          {options.map((_item, itemIndex) => (
+            <option key={itemIndex} value={itemIndex}>
+              {itemIndex + 1}
+            </option>
+          ))}
+        </select>
+      )}
       <select
         value={format}
         onChange={(e) => updateNodeProperties(elementId, { ...nodeData.properties, [fmtKey]: e.target.value })}

@@ -1,6 +1,5 @@
 import { getGenerationModel } from "./generation-models";
 import type { CanvasElement, Connection, NodeType } from "@/types/canvas";
-import { NODE_CONFIG } from "@/types/canvas";
 
 export type WorkflowNodeElement = CanvasElement & {
   type: NodeType;
@@ -27,7 +26,7 @@ const ALLOWED_CONNECTIONS: Record<NodeType, NodeType[]> = {
   prompt: ["generate"],
   source: ["generate"],
   generate: ["generate", "output"],
-  output: [],
+  output: ["generate"],
 };
 
 export function isWorkflowNode(element: CanvasElement | undefined): element is WorkflowNodeElement {
@@ -129,33 +128,12 @@ export function prepareWorkflowRun(
     const model = getGenerationModel(generate.nodeData.properties.model);
     const connectedOutputs = getConnectedOutputIds(nextElements, nextConnections, generate.id);
 
-    if (connectedOutputs.length === 0) {
-      const created = createNode(
-        "output",
-        generate.x + Math.max(generate.width, 200) + 64,
-        generate.y
-      );
-      created.nodeData!.properties = {
-        ...created.nodeData!.properties,
-        outputIndex: "0",
-        outputType: model.outputType,
-      };
-      const conn = { id: uid(), fromId: generate.id, toId: created.id };
-      nextElements.push(created);
-      nextConnections.push(conn);
-      addedElements.push(created);
-      addedConnections.push(conn);
-      connectedOutputs.push(created.id);
-    }
-
     connectedOutputs.forEach((outputId, index) => {
       const output = nextElements.find((element) => element.id === outputId);
       if (!isWorkflowNode(output)) return;
       output.nodeData = {
         ...output.nodeData,
         status: "idle",
-        outputUrl: undefined,
-        outputUrls: undefined,
         error: undefined,
         properties: {
           ...output.nodeData.properties,
@@ -201,7 +179,7 @@ export function collectGenerateInput(
       if (url) mediaUrls.push(url);
     }
     if (nodeType === "generate" || nodeType === "output") {
-      const url = element.nodeData.outputUrl?.trim();
+      const url = getSelectedOutputUrl(element.nodeData)?.trim();
       if (url) mediaUrls.push(url);
     }
   }
@@ -325,27 +303,11 @@ function dedupe(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-function createNode(nodeType: NodeType, x: number, y: number): CanvasElement {
-  const config = NODE_CONFIG[nodeType];
-  return {
-    id: uid(),
-    type: nodeType,
-    x,
-    y,
-    width: config.w,
-    height: config.h,
-    stroke: "#171717",
-    fill: "#ffffff",
-    strokeWidth: 1.5,
-    nodeData: {
-      nodeType,
-      label: config.label,
-      properties: { ...config.defaultProps },
-      status: "idle",
-    },
-  };
-}
+function getSelectedOutputUrl(nodeData: WorkflowNodeElement["nodeData"]) {
+  if (!nodeData.outputUrls || nodeData.outputUrls.length === 0) {
+    return nodeData.outputUrl;
+  }
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  const selectedIndex = Number.parseInt(nodeData.properties.selectedOutputIndex ?? "0", 10);
+  return nodeData.outputUrls[selectedIndex] ?? nodeData.outputUrl ?? nodeData.outputUrls[0];
 }

@@ -286,6 +286,29 @@ function ProjectCanvasInner({
         });
       };
 
+      const appendOutputResult = (id: string, url: string) => {
+        workingElements = workingElements.map((element) => {
+          if (element.id !== id || !element.nodeData) return element;
+          const outputUrls = [...(element.nodeData.outputUrls ?? [])];
+          outputUrls.push(url);
+          const selectedOutputIndex = String(outputUrls.length - 1);
+          return {
+            ...element,
+            nodeData: {
+              ...element.nodeData,
+              status: "done",
+              outputUrl: url,
+              outputUrls,
+              error: undefined,
+              properties: {
+                ...element.nodeData.properties,
+                selectedOutputIndex,
+              },
+            },
+          };
+        });
+      };
+
       const flushRunState = () => {
         replaceWorkflowGraph(workingElements, workingConnections);
       };
@@ -313,8 +336,15 @@ function ProjectCanvasInner({
 
         const selectedModel = getGenerationModel(generateNode.nodeData.properties.model);
         const outputIds = prepared.freshOutputIds[generateId] ?? [];
-        const count = Math.max(outputIds.length, 1);
         const input = collectGenerateInput(workingElements, workingConnections, generateId);
+
+        if (outputIds.length === 0) {
+          const message = "Connect at least one output node before running this generate node.";
+          setNodeState(generateId, { status: "error", error: message });
+          flushRunState();
+          anyError = true;
+          continue;
+        }
 
         if (!input.prompt && !input.mediaUrl) {
           const message = "Connect at least one prompt or source before running this generate node.";
@@ -339,7 +369,7 @@ function ProjectCanvasInner({
         }
 
         const results = await Promise.all(
-          Array.from({ length: count }, async (_, index) => {
+          outputIds.map(async (_outputId, index) => {
             if (cancelledRef.current) return { index, result: { error: "Cancelled" } };
             const result = await runGeneration({
               prompt: input.prompt,
@@ -367,12 +397,7 @@ function ProjectCanvasInner({
           if (result.url) {
             allUrls[index] = result.url;
             if (outputId) {
-              setNodeState(outputId, {
-                status: "done",
-                outputUrl: result.url,
-                outputUrls: [result.url],
-                error: undefined,
-              });
+              appendOutputResult(outputId, result.url);
             }
           } else {
             lastError = result.error || "Generation failed";
