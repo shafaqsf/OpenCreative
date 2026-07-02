@@ -346,6 +346,27 @@ function WorkflowNode({
                   {outputUrls.length}
                 </div>
               )}
+              {nodeType === "source" && nodeData.properties.fileName && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 6,
+                    right: 6,
+                    bottom: 6,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    borderRadius: 4,
+                    background: "rgba(255,255,255,0.86)",
+                    color: "#525252",
+                    fontSize: 9,
+                    fontWeight: 500,
+                    padding: "2px 5px",
+                  }}
+                >
+                  {nodeData.properties.fileName}
+                </div>
+              )}
               {isSelected && nodeType === "output" && displayUrl && (
                 <OutputNodeControls
                   url={displayUrl}

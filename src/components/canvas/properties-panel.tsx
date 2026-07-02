@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useCanvas } from "@/lib/canvas/context";
 import {
   GENERATION_MODELS,
   getGenerationModel,
 } from "@/lib/canvas/generation-models";
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/lib/toast/context";
 
 const NODE_CONFIG: Record<
   string,
@@ -71,7 +73,9 @@ export function PropertiesPanel() {
     removeConnection,
     updateNodeProperties,
   } = useCanvas();
+  const { addToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const selectedEl = elements.find((el) => selectedIds.includes(el.id));
   const nodeData = selectedEl?.nodeData;
@@ -142,13 +146,41 @@ export function PropertiesPanel() {
   }
 
   async function handleUpload(file: File) {
-    const formData = new FormData();
-    formData.append("file", file);
+    const mediaType = file.type.startsWith("video/") ? "video" : "image";
+    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+    const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    setUploading(true);
+
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      const json = await res.json();
-      if (json.url) setField("url", json.url);
-    } catch {}
+      const supabase = createClient();
+      const { error } = await supabase.storage
+        .from("assets")
+        .upload(key, file, { contentType: file.type || undefined, upsert: false });
+
+      if (error) throw new Error(error.message);
+
+      const { data } = supabase.storage.from("assets").getPublicUrl(key);
+      updateNodeProperties(el.id, {
+        ...nd.properties,
+        url: data.publicUrl,
+        fileType: mediaType,
+        fileName: file.name,
+      });
+      addToast({
+        title: "Source uploaded",
+        message: `${file.name} is ready on the canvas.`,
+        variant: "success",
+      });
+    } catch (err) {
+      addToast({
+        title: "Upload failed",
+        message: err instanceof Error ? err.message : "Could not upload this file.",
+        variant: "error",
+      });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   return (
@@ -259,10 +291,14 @@ export function PropertiesPanel() {
           <input
             ref={fileInputRef}
             type="file"
+            disabled={uploading}
             accept="image/*,video/*"
             onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUpload(file); }}
             className="w-full text-xs file:mr-2 file:rounded-md file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-[11px] file:font-medium file:text-white hover:file:bg-neutral-800"
           />
+          {uploading && (
+            <p className="mt-2 text-[11px] text-neutral-500">Uploading source media...</p>
+          )}
         </div>
       )}
 
