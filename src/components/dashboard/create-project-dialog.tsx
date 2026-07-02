@@ -19,7 +19,7 @@ export function CreateProjectDialog({
     e.preventDefault();
     if (!name.trim()) return;
     onCreate(name.trim());
-    addToast({ title: "Project created", message: `"${name.trim()}" is ready for editing.`, variant: "success", duration: 3000 });
+    addToast({ title: "Campaign created", message: `"${name.trim()}" is ready for editing.`, variant: "success", duration: 3000 });
     setName("");
     setOpen(false);
   }
@@ -28,30 +28,31 @@ export function CreateProjectDialog({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex size-8 items-center justify-center rounded-full bg-neutral-900 text-white hover:bg-neutral-800"
-        title="New project"
+        className="inline-flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-neutral-800"
+        title="New campaign"
       >
         <Plus className="size-4" />
+        New campaign
       </button>
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <form
             onSubmit={submit}
-            className="w-[24rem] rounded-xl border border-neutral-200 bg-white p-5 shadow-lg"
+            className="glass-panel-strong w-[24rem] rounded-xl p-5"
           >
             <h3 className="text-sm font-semibold text-neutral-900">
-              New project
+              New campaign
             </h3>
             <input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Project name"
+              placeholder="Campaign name"
               className="mt-3 w-full rounded-md border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-900"
             />
             <p className="mt-2 text-xs text-neutral-500">
-              Build your own workflow on the canvas.
+              Start with a campaign workspace, then add brief, audience, channel, creative, review, and export steps.
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button

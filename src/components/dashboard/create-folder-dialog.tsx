@@ -17,7 +17,7 @@ export function CreateFolderDialog({
     e.preventDefault();
     if (!name.trim()) return;
     onCreate(name.trim());
-    addToast({ title: "Folder created", message: `"${name.trim()}" was created.`, variant: "success", duration: 3000 });
+    addToast({ title: "Workspace created", message: `"${name.trim()}" was created.`, variant: "success", duration: 3000 });
     setName("");
     setOpen(false);
   }
@@ -26,10 +26,10 @@ export function CreateFolderDialog({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50"
+        className="flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50"
       >
         <FolderPlus className="size-4" />
-        New folder
+        New workspace
       </button>
 
       {open && (
@@ -39,13 +39,13 @@ export function CreateFolderDialog({
             className="w-80 rounded-xl border border-neutral-200 bg-white p-5 shadow-lg"
           >
             <h3 className="text-sm font-semibold text-neutral-900">
-              Create folder
+              Create workspace
             </h3>
             <input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Folder name"
+              placeholder="Workspace name"
               className="mt-3 w-full rounded-md border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-900"
             />
             <div className="mt-4 flex justify-end gap-2">

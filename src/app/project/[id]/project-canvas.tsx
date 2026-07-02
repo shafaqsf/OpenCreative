@@ -1492,11 +1492,11 @@ function ProjectCanvasInner({
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="hidden items-center gap-1 rounded-lg border border-white/70 bg-white/70 p-1 shadow-sm backdrop-blur md:flex">
+          <div className="hidden items-center gap-1 rounded-full border border-white/70 bg-white/70 p-1 shadow-sm backdrop-blur md:flex">
             <button
               type="button"
               onClick={openSearch}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white"
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white"
               title="Search canvas"
             >
               <Search className="size-3.5" />
@@ -1505,33 +1505,11 @@ function ProjectCanvasInner({
             <button
               type="button"
               onClick={openNavigator}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white"
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white"
               title="Open navigator"
             >
               <PanelRightOpen className="size-3.5" />
               Navigator
-            </button>
-            <button
-              type="button"
-              onClick={selectedCount > 0 ? () => removeElements(selectedIds) : undefined}
-              disabled={selectedCount === 0}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white disabled:text-neutral-300 disabled:hover:bg-transparent"
-              title="Delete selected"
-            >
-              <Trash2 className="size-3.5" />
-              Delete {selectedCount > 0 ? `(${selectedCount})` : ""}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmText("");
-                setConfirmAction("clear-canvas");
-              }}
-              disabled={elements.length === 0}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:text-neutral-300 disabled:hover:bg-transparent"
-              title="Clear canvas"
-            >
-              Clear
             </button>
           </div>
           <button
@@ -1728,6 +1706,18 @@ function ProjectCanvasInner({
                 >
                   <ListFilter className="size-3.5 text-neutral-400" />
                   Select marketing nodes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    removeElements(selectedIds);
+                  }}
+                  disabled={selectedCount === 0}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-300"
+                >
+                  <Trash2 className="size-3.5 text-neutral-400" />
+                  Delete selected {selectedCount > 0 ? `(${selectedCount})` : ""}
                 </button>
                 <button
                   type="button"
