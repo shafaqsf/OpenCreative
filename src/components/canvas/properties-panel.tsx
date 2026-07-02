@@ -654,6 +654,59 @@ function OutputNodeEditor({
     addToast({ title: "Branch created", message: "A variation chain was added beside the output.", variant: "success" });
   }
 
+  function createVariationWorkflow(version: OutputVersion) {
+    const outputElement = elements.find((element) => element.id === elementId);
+    const x = outputElement ? outputElement.x + outputElement.width + 80 : 120;
+    const y = outputElement ? outputElement.y + outputElement.height + 48 : 180;
+    const prompt = newNode("prompt", x, y);
+    const source = newNode("source", x + 240, y);
+    const generate = newNode("generate", x + 480, y);
+    const output = newNode("output", x + 750, y);
+    const promptNode: CanvasElement = {
+      ...prompt,
+      nodeData: {
+        ...prompt.nodeData!,
+        status: "done",
+        properties: {
+          ...prompt.nodeData!.properties,
+          content: `Create a polished variation of the selected ${version.mediaType} while preserving the strongest composition cues.`,
+        },
+      },
+    };
+    const sourceNode: CanvasElement = {
+      ...source,
+      nodeData: {
+        ...source.nodeData!,
+        status: "done",
+        outputUrl: version.url,
+        properties: {
+          ...source.nodeData!.properties,
+          url: version.url,
+          fileType: version.mediaType,
+          sourceOutputVersionId: version.id,
+        },
+      },
+    };
+    const outputNode: CanvasElement = {
+      ...output,
+      nodeData: {
+        ...output.nodeData!,
+        properties: {
+          ...output.nodeData!.properties,
+          outputType: version.mediaType,
+          parentOutputVersionId: version.id,
+        },
+      },
+    };
+    const newConnections: Connection[] = [
+      { id: uid(), fromId: promptNode.id, toId: generate.id },
+      { id: uid(), fromId: sourceNode.id, toId: generate.id },
+      { id: uid(), fromId: generate.id, toId: outputNode.id },
+    ];
+    addElements([promptNode, sourceNode, generate, outputNode], newConnections);
+    addToast({ title: "Variation workflow created", message: "Prompt, source, generate, and output nodes were added.", variant: "success" });
+  }
+
   if (versions.length === 0 || !selectedUrl || !activeVersion) {
     return (
       <div className="px-4 py-3">
@@ -797,14 +850,18 @@ function OutputNodeEditor({
 
       <div className="space-y-2">
         <span className="block text-[11px] font-medium text-neutral-500">Reuse</span>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button type="button" onClick={() => createSourceFromVersion(activeVersion)} className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
             <ImagePlus className="size-3" />
-            Use as source
+            Source
           </button>
           <button type="button" onClick={() => branchFromVersion(activeVersion)} className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
             <GitBranch className="size-3" />
             Branch
+          </button>
+          <button type="button" onClick={() => createVariationWorkflow(activeVersion)} className="inline-flex items-center justify-center gap-1.5 rounded-md border border-neutral-200 px-3 py-2 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
+            <Sparkles className="size-3" />
+            Variation
           </button>
         </div>
       </div>
