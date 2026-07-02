@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Images, Download, ChevronDown, Eye } from "lucide-react";
 import { useCanvas } from "@/lib/canvas/context";
-import { listGeneratedMedia, type GeneratedMedia } from "@/lib/projects/service";
+import { listGeneratedMedia } from "@/lib/projects/client-service";
+import type { GeneratedMedia } from "@/lib/projects/service";
 
 type OutputItem = {
   url: string;
@@ -44,13 +45,13 @@ export function OutputGalleryButton({ projectId }: { projectId: string }) {
     }));
     const seen = new Set(items.map((item) => item.url));
     for (const el of elements) {
-      if (el.type !== "generate" || !el.nodeData?.outputUrls) continue;
+      if ((el.type !== "generate" && el.type !== "output") || !el.nodeData?.outputUrls) continue;
       el.nodeData.outputUrls.forEach((url, i) => {
         if (seen.has(url)) return;
         items.push({
           url,
           nodeId: el.id,
-          nodeLabel: el.customLabel || el.nodeData?.label || "Generate",
+          nodeLabel: el.customLabel || el.nodeData?.label || (el.type === "output" ? "Output" : "Generate"),
           index: i,
           mediaType: (el.nodeData?.properties.outputType as "image" | "video") || "image",
         });
