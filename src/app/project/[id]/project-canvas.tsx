@@ -231,7 +231,8 @@ function ProjectCanvasInner({
     runningRef.current = true;
     setRunning(true);
 
-    let anyError = false;
+    let anyValidationIssue = false;
+    let anyGenerationError = false;
     let anySaveError = false;
 
     try {
@@ -306,7 +307,7 @@ function ProjectCanvasInner({
       if (prepared.generateIds.length === 0) {
         addToast({
           title: "No generate nodes",
-          message: "Add a generate node and connect a prompt or source to run a workflow.",
+          message: "Add a generate node with connected input and output nodes before running.",
           variant: "info",
         });
         return;
@@ -331,7 +332,7 @@ function ProjectCanvasInner({
             message: runIssue,
             variant: "warning",
           });
-          anyError = true;
+          anyValidationIssue = true;
           continue;
         }
 
@@ -344,7 +345,12 @@ function ProjectCanvasInner({
           setNodeState(generateId, { status: "error", error: message });
           outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
           flushRunState();
-          anyError = true;
+          addToast({
+            title: "Model cannot use this input",
+            message,
+            variant: "warning",
+          });
+          anyValidationIssue = true;
           continue;
         }
 
@@ -373,7 +379,7 @@ function ProjectCanvasInner({
             }
           } else {
             lastError = result.error || "Generation failed";
-            anyError = true;
+            anyGenerationError = true;
             if (outputId) {
               setNodeState(outputId, {
                 status: "error",
@@ -418,12 +424,18 @@ function ProjectCanvasInner({
         flushRunState();
       }
 
-      if (anyError && anySaveError) {
+      if (anyGenerationError && anySaveError) {
         addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
-      } else if (anyError) {
+      } else if (anyGenerationError) {
         addToast({ title: "Workflow finished with errors", message: "Generation failed. Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anySaveError) {
         addToast({ title: "Workflow complete", message: "Outputs were created, but some gallery saves failed.", variant: "warning" });
+      } else if (anyValidationIssue) {
+        addToast({
+          title: "Workflow needs attention",
+          message: "Some generate nodes were skipped because required connections are missing.",
+          variant: "warning",
+        });
       } else {
         addToast({ title: "Workflow complete", message: "All nodes finished successfully.", variant: "success" });
       }
