@@ -99,7 +99,6 @@ export const NODE_CONFIG: Record<
       model: DEFAULT_GENERATION_MODEL.id,
       outputType: DEFAULT_GENERATION_MODEL.outputType,
       duration: "5",
-      count: "1",
     },
   },
   output: {

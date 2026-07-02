@@ -72,6 +72,17 @@ export async function saveGeneratedMedia(input: GeneratedMediaInput): Promise<Ge
   return data as GeneratedMedia;
 }
 
+export async function listGeneratedMedia(projectId: string): Promise<GeneratedMedia[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("generated_media")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as GeneratedMedia[];
+}
+
 export async function listAgentChats(projectId: string): Promise<AgentChat[]> {
   const supabase = createClient();
   const { data, error } = await supabase

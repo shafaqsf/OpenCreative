@@ -62,6 +62,7 @@ const nodes: { id: ToolId; label: string; Icon: LucideIcon; desc: string }[] = [
   { id: "prompt", label: "Prompt", Icon: FileText, desc: "Text prompt or instruction" },
   { id: "source", label: "Source", Icon: Image, desc: "Image/video URL or upload" },
   { id: "generate", label: "Generate", Icon: Sparkles, desc: "AI generation step" },
+  { id: "output", label: "Output", Icon: Image, desc: "Generated result target" },
 ];
 
 export function ToolsPanel() {
@@ -223,10 +224,6 @@ export function ToolsPanel() {
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[10px] leading-relaxed text-neutral-400">
-          Click a node, then click the canvas to place it. Drag from an output
-          port to an input port to connect nodes.
-        </p>
       </Panel>
       <Panel title="Templates" defaultOpen={false}>
         <div className="flex flex-col gap-1">

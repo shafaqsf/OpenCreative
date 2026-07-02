@@ -1,6 +1,5 @@
-import { getGenerationModel, normalizeOutputCount } from "./generation-models";
+import { getGenerationModel } from "./generation-models";
 import type { CanvasElement, Connection, NodeType } from "@/types/canvas";
-import { NODE_CONFIG } from "@/types/canvas";
 
 export type WorkflowNodeElement = CanvasElement & {
   type: NodeType;
@@ -27,7 +26,7 @@ const ALLOWED_CONNECTIONS: Record<NodeType, NodeType[]> = {
   prompt: ["generate"],
   source: ["generate"],
   generate: ["generate", "output"],
-  output: [],
+  output: ["generate"],
 };
 
 export function isWorkflowNode(element: CanvasElement | undefined): element is WorkflowNodeElement {
@@ -65,6 +64,31 @@ export function canConnectNodes(
   }
 
   return { ok: true };
+}
+
+export function normalizeConnectionDirection(
+  elements: CanvasElement[],
+  fromId: string,
+  toId: string
+): { fromId: string; toId: string } {
+  const from = elements.find((element) => element.id === fromId);
+  const to = elements.find((element) => element.id === toId);
+
+  if (
+    isWorkflowNode(from) &&
+    isWorkflowNode(to) &&
+    from.nodeData.nodeType === "output" &&
+    to.nodeData.nodeType === "generate" &&
+    !hasOutputMedia(from)
+  ) {
+    return { fromId: to.id, toId: from.id };
+  }
+
+  return { fromId, toId };
+}
+
+function hasOutputMedia(element: WorkflowNodeElement) {
+  return Boolean(element.nodeData.outputUrl || element.nodeData.outputUrls?.length);
 }
 
 export function prepareWorkflowRun(
@@ -116,12 +140,10 @@ export function prepareWorkflowRun(
     if (!isWorkflowNode(generate) || generate.nodeData.nodeType !== "generate") continue;
 
     const model = getGenerationModel(generate.nodeData.properties.model);
-    const count = normalizeOutputCount(generate.nodeData.properties.count, model.id);
     generate.nodeData.properties = {
       ...generate.nodeData.properties,
       model: model.id,
       outputType: model.outputType,
-      count: String(count),
     };
   }
 
@@ -129,40 +151,25 @@ export function prepareWorkflowRun(
     if (!isWorkflowNode(generate) || generate.nodeData.nodeType !== "generate") continue;
 
     const model = getGenerationModel(generate.nodeData.properties.model);
-    const count = normalizeOutputCount(generate.nodeData.properties.count, model.id);
+    normalizeEmptyOutputTargetConnections(nextElements, nextConnections, generate.id);
+    const connectedOutputs = getConnectedOutputIds(nextElements, nextConnections, generate.id);
 
-    const staleOutputIds = nextConnections
-      .filter((conn) => conn.fromId === generate.id &&
-        nextElements.some((el) => el.id === conn.toId && isWorkflowNode(el) && el.nodeData.nodeType === "output"))
-      .map((conn) => conn.toId);
-    const staleOutputSet = new Set(staleOutputIds);
-
-    if (staleOutputIds.length > 0) {
-      const remaining = nextElements.filter((el) => !staleOutputSet.has(el.id));
-      nextElements.splice(0, nextElements.length, ...remaining);
-      const remainingConns = nextConnections.filter((conn) => !staleOutputSet.has(conn.toId));
-      nextConnections.splice(0, nextConnections.length, ...remainingConns);
-    }
-
-    const fresh: string[] = [];
-    for (let index = 0; index < count; index++) {
-      const created = createNode(
-        "output",
-        generate.x + Math.max(generate.width, 200) + 64,
-        generate.y + index * 120
-      );
-      created.nodeData!.properties = {
-        ...created.nodeData!.properties,
-        outputType: model.outputType,
+    connectedOutputs.forEach((outputId, index) => {
+      const output = nextElements.find((element) => element.id === outputId);
+      if (!isWorkflowNode(output)) return;
+      output.nodeData = {
+        ...output.nodeData,
+        status: "idle",
+        error: undefined,
+        properties: {
+          ...output.nodeData.properties,
+          outputIndex: String(index),
+          outputType: model.outputType,
+        },
       };
-      const conn = { id: uid(), fromId: generate.id, toId: created.id };
-      nextElements.push(created);
-      nextConnections.push(conn);
-      addedElements.push(created);
-      addedConnections.push(conn);
-      fresh.push(created.id);
-    }
-    freshOutputIds[generate.id] = fresh;
+    });
+
+    freshOutputIds[generate.id] = connectedOutputs;
   }
 
   const generateIds = sortGenerateNodes(nextElements, nextConnections, issues);
@@ -198,7 +205,7 @@ export function collectGenerateInput(
       if (url) mediaUrls.push(url);
     }
     if (nodeType === "generate" || nodeType === "output") {
-      const url = element.nodeData.outputUrl?.trim();
+      const url = getSelectedOutputUrl(element.nodeData)?.trim();
       if (url) mediaUrls.push(url);
     }
   }
@@ -213,12 +220,64 @@ export function collectGenerateInput(
   };
 }
 
+export function getGenerateRunIssue(
+  elements: CanvasElement[],
+  connections: Connection[],
+  generateId: string
+): string | undefined {
+  if (getConnectedOutputIds(elements, connections, generateId).length === 0) {
+    return "Connect an Output node.";
+  }
+
+  const input = collectGenerateInput(elements, connections, generateId);
+  if (!input.prompt && !input.mediaUrl) {
+    const upstreamNodes = getGenerateInputNodes(elements, connections, generateId);
+    const hasPrompt = upstreamNodes.some((node) => node.nodeData.nodeType === "prompt");
+    const hasSource = upstreamNodes.some((node) => node.nodeData.nodeType === "source");
+    const hasMediaOutput = upstreamNodes.some((node) =>
+      node.nodeData.nodeType === "generate" || node.nodeData.nodeType === "output"
+    );
+
+    if (hasPrompt && !hasSource && !hasMediaOutput) {
+      return "Add prompt text.";
+    }
+
+    if (hasSource && !hasPrompt && !hasMediaOutput) {
+      return "Upload or paste media.";
+    }
+
+    if (hasMediaOutput && !hasPrompt && !hasSource) {
+      return "Select generated media.";
+    }
+
+    if (upstreamNodes.length > 0) {
+      return "Add prompt text, upload media, or select generated media.";
+    }
+
+    return "Connect a Prompt, Source, or Output node.";
+  }
+
+  return undefined;
+}
+
+function getGenerateInputNodes(
+  elements: CanvasElement[],
+  connections: Connection[],
+  generateId: string
+) {
+  const upstreamIds = collectUpstreamIds(connections, generateId);
+  return elements.filter(
+    (element): element is WorkflowNodeElement =>
+      upstreamIds.has(element.id) && isWorkflowNode(element)
+  );
+}
+
 export function getConnectedOutputIds(
   elements: CanvasElement[],
   connections: Connection[],
   generateId: string
 ): string[] {
-  return connections
+  const directOutputIds = connections
     .filter((connection) => connection.fromId === generateId)
     .map((connection) => elements.find((element) => element.id === connection.toId))
     .filter(
@@ -231,6 +290,41 @@ export function getConnectedOutputIds(
       return aIndex - bIndex;
     })
     .map((element) => element.id);
+
+  const reversedEmptyOutputIds = connections
+    .filter((connection) => connection.toId === generateId)
+    .map((connection) => elements.find((element) => element.id === connection.fromId))
+    .filter(
+      (element): element is WorkflowNodeElement =>
+        isWorkflowNode(element) &&
+        element.nodeData.nodeType === "output" &&
+        !hasOutputMedia(element)
+    )
+    .map((element) => element.id);
+
+  return Array.from(new Set([...directOutputIds, ...reversedEmptyOutputIds]));
+}
+
+function normalizeEmptyOutputTargetConnections(
+  elements: CanvasElement[],
+  connections: Connection[],
+  generateId: string
+) {
+  connections.forEach((connection) => {
+    if (connection.toId !== generateId) return;
+    const from = elements.find((element) => element.id === connection.fromId);
+    const to = elements.find((element) => element.id === connection.toId);
+    if (
+      isWorkflowNode(from) &&
+      isWorkflowNode(to) &&
+      from.nodeData.nodeType === "output" &&
+      to.nodeData.nodeType === "generate" &&
+      !hasOutputMedia(from)
+    ) {
+      connection.fromId = generateId;
+      connection.toId = from.id;
+    }
+  });
 }
 
 export function getNode(elements: CanvasElement[], id: string): WorkflowNodeElement | undefined {
@@ -322,27 +416,11 @@ function dedupe(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-function createNode(nodeType: NodeType, x: number, y: number): CanvasElement {
-  const config = NODE_CONFIG[nodeType];
-  return {
-    id: uid(),
-    type: nodeType,
-    x,
-    y,
-    width: config.w,
-    height: config.h,
-    stroke: "#171717",
-    fill: "#ffffff",
-    strokeWidth: 1.5,
-    nodeData: {
-      nodeType,
-      label: config.label,
-      properties: { ...config.defaultProps },
-      status: "idle",
-    },
-  };
-}
+function getSelectedOutputUrl(nodeData: WorkflowNodeElement["nodeData"]) {
+  if (!nodeData.outputUrls || nodeData.outputUrls.length === 0) {
+    return nodeData.outputUrl;
+  }
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  const selectedIndex = Number.parseInt(nodeData.properties.selectedOutputIndex ?? "0", 10);
+  return nodeData.outputUrls[selectedIndex] ?? nodeData.outputUrl ?? nodeData.outputUrls[0];
 }

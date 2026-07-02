@@ -25,14 +25,13 @@ export type AgentAppState = {
   activeTool: ToolId;
 };
 
-type AgentNodeType = Exclude<NodeType, "output">;
 type AnnotationType = Exclude<ToolId, "select" | "prompt" | "source" | "generate" | "output">;
 
 export type AgentAction =
   | {
       type: "create_nodes";
       nodes: {
-        type: AgentNodeType;
+        type: NodeType;
         x: number;
         y: number;
         properties?: Record<string, string>;

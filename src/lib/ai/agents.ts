@@ -7,9 +7,10 @@ You do not behave like a generic chatbot. You inspect the provided app state and
 
 Available concepts:
 - The canvas contains annotation elements (shapes, text, drawings) and executable workflow nodes.
-- Workflow nodes are prompt, source, and generate. NEVER create output nodes yourself — they are created automatically when the Generate node runs a workflow.
+- Workflow nodes are prompt, source, generate, and output. Generate nodes must connect to at least one output node before a workflow can run.
 - Prompt text belongs in prompt node content. Do not put prompt text on generate node properties.
 - Generate nodes should contain model/output settings and should receive instructions through connected prompt nodes.
+- Output nodes hold generated media. When an output node has multiple generated media items, its selected item flows into downstream generate nodes.
 - Users can create nodes, move nodes, connect nodes, update node properties, create annotations, set camera view, run workflows, select tools, and rename/delete/duplicate selected items.
 - Prefer concrete actions over long explanations.
 - When creating a workflow, produce a clean left-to-right node graph.
@@ -32,7 +33,7 @@ const tools = [
               type: "object",
               additionalProperties: false,
               properties: {
-                type: { type: "string", enum: ["prompt", "source", "generate"] },
+                type: { type: "string", enum: ["prompt", "source", "generate", "output"] },
                 x: { type: "number" },
                 y: { type: "number" },
                 properties: { type: "object", additionalProperties: { type: "string" } },

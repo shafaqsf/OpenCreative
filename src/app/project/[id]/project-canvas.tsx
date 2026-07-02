@@ -9,7 +9,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Loader2,
-  Play,
   MousePointer2,
   Square,
   Circle,
@@ -47,19 +46,26 @@ import { OutputGalleryButton } from "@/components/canvas/output-gallery";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
+import { formatGenerationFailureForUser } from "@/lib/canvas/generation-errors";
 import { runGeneration } from "@/lib/canvas/run-workflow";
-import { getGenerationModel, normalizeOutputCount } from "@/lib/canvas/generation-models";
+import { getGenerationModel } from "@/lib/canvas/generation-models";
 import {
   collectGenerateInput,
+  getGenerateRunIssue,
   getNode,
   prepareWorkflowRun,
 } from "@/lib/canvas/workflow-engine";
+import { sanitizeWorkflowForPersistence } from "@/lib/canvas/workflow-persistence";
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import { useRegisterCommands } from "@/lib/command-palette/context";
 import type { Project } from "@/lib/projects/service";
 import type { NodeStatus, WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
+  const initialWorkflow = useMemo(
+    () => sanitizeWorkflowForPersistence(project.workflow),
+    [project.workflow]
+  );
   const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
   const [autoSave, setAutoSave] = useState(true);
   const autoSaveRef = useRef(autoSave);
@@ -67,7 +73,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   const latestStateRef = useRef<WorkflowState | null>(null);
   const saveStateRef = useRef<"idle" | "scheduled" | "saving">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedStateRef = useRef(JSON.stringify(project.workflow));
+  const lastSavedStateRef = useRef(JSON.stringify(initialWorkflow));
   const pendingAfterSaveRef = useRef(false);
 
   const scheduleSave = useCallback(() => {
@@ -85,7 +91,8 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
         saveStateRef.current = "idle";
         return;
       }
-      const serialized = JSON.stringify(state);
+      const persistedState = sanitizeWorkflowForPersistence(state);
+      const serialized = JSON.stringify(persistedState);
       if (serialized === lastSavedStateRef.current) {
         saveStateRef.current = "idle";
         setSaveStatus("saved");
@@ -96,7 +103,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
       setSaveStatus("saving");
       const stateAtStart = latestStateRef.current;
       try {
-        await updateProjectWorkflow(project.id, state);
+        await updateProjectWorkflow(project.id, persistedState);
         lastSavedStateRef.current = serialized;
         setSaveStatus("saved");
       } catch {
@@ -113,7 +120,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   const handleChange = useCallback(
     (state: WorkflowState) => {
       latestStateRef.current = state;
-      const serialized = JSON.stringify(state);
+      const serialized = JSON.stringify(sanitizeWorkflowForPersistence(state));
       if (serialized === lastSavedStateRef.current) {
         setSaveStatus("saved");
         return;
@@ -134,9 +141,10 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveStateRef.current = "saving";
     setSaveStatus("saving");
-    const serialized = JSON.stringify(latestStateRef.current);
+    const persistedState = sanitizeWorkflowForPersistence(latestStateRef.current);
+    const serialized = JSON.stringify(persistedState);
     try {
-      await updateProjectWorkflow(project.id, latestStateRef.current);
+      await updateProjectWorkflow(project.id, persistedState);
       lastSavedStateRef.current = serialized;
       setSaveStatus("saved");
     } catch {
@@ -153,7 +161,7 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   }, []);
 
   return (
-    <CanvasProvider initial={project.workflow} onChange={handleChange}>
+    <CanvasProvider initial={initialWorkflow} onChange={handleChange}>
       <ProjectCanvasInner
         project={project}
         saveStatus={saveStatus}
@@ -197,32 +205,16 @@ function ProjectCanvasInner({
     alignSelection,
     distributeSelection,
     setRunWorkflow,
-    updateNodeStatus,
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
   const [queueCount, setQueueCount] = useState(0);
   const runningRef = useRef(false);
-  const cancelledRef = useRef(false);
   const queueRef = useRef(0);
   const leftPanel = useResizablePanel("left", 224, { min: 180, max: 360 });
   const rightPanel = useResizablePanel("right", 256, { min: 200, max: 400 });
 
   useKeyboardShortcuts();
-
-  const cancelRun = useCallback(() => {
-    cancelledRef.current = true;
-    queueRef.current = 0;
-    setQueueCount(0);
-    for (const el of elements) {
-      if (el.nodeData && (el.nodeData.status === "running" || el.nodeData.status === "idle")) {
-        updateNodeStatus(el.id, "idle");
-      }
-    }
-    setRunning(false);
-    runningRef.current = false;
-    addToast({ title: "Workflow cancelled", message: "Generation stopped.", variant: "info" });
-  }, [elements, updateNodeStatus, addToast]);
 
   const handleRunRef = useRef<() => void>(() => {});
   const processQueueRef = useRef<() => void>(() => {});
@@ -245,10 +237,12 @@ function ProjectCanvasInner({
 
     runningRef.current = true;
     setRunning(true);
-    cancelledRef.current = false;
 
-    let anyError = false;
+    let anyValidationIssue = false;
+    let anyGenerationError = false;
     let anySaveError = false;
+    let firstValidationIssue: string | undefined;
+    let firstGenerationError: string | undefined;
 
     try {
       const prepared = prepareWorkflowRun(elements, connections);
@@ -286,6 +280,46 @@ function ProjectCanvasInner({
         });
       };
 
+      const settleNode = (id: string) => {
+        workingElements = workingElements.map((element) => {
+          if (element.id !== id || !element.nodeData) return element;
+          const hasMedia = Boolean(element.nodeData.outputUrl || element.nodeData.outputUrls?.length);
+          const hasSource = Boolean(element.nodeData.properties.url?.trim());
+          return {
+            ...element,
+            nodeData: {
+              ...element.nodeData,
+              status: hasMedia || hasSource ? "done" : "idle",
+              error: undefined,
+              properties: { ...element.nodeData.properties },
+            },
+          };
+        });
+      };
+
+      const appendOutputResult = (id: string, url: string) => {
+        workingElements = workingElements.map((element) => {
+          if (element.id !== id || !element.nodeData) return element;
+          const outputUrls = [...(element.nodeData.outputUrls ?? [])];
+          outputUrls.push(url);
+          const selectedOutputIndex = String(outputUrls.length - 1);
+          return {
+            ...element,
+            nodeData: {
+              ...element.nodeData,
+              status: "done",
+              outputUrl: url,
+              outputUrls,
+              error: undefined,
+              properties: {
+                ...element.nodeData.properties,
+                selectedOutputIndex,
+              },
+            },
+          };
+        });
+      };
+
       const flushRunState = () => {
         replaceWorkflowGraph(workingElements, workingConnections);
       };
@@ -299,29 +333,48 @@ function ProjectCanvasInner({
       if (prepared.generateIds.length === 0) {
         addToast({
           title: "No generate nodes",
-          message: "Add a generate node and connect a prompt or source to run a workflow.",
+          message: "Add a generate node with connected input and output nodes before running.",
           variant: "info",
         });
         return;
       }
 
       for (const generateId of prepared.generateIds) {
-        if (cancelledRef.current) break;
-
         const generateNode = getNode(workingElements, generateId);
         if (!generateNode) continue;
 
         const selectedModel = getGenerationModel(generateNode.nodeData.properties.model);
-        const count = normalizeOutputCount(generateNode.nodeData.properties.count, selectedModel.id);
         const outputIds = prepared.freshOutputIds[generateId] ?? [];
         const input = collectGenerateInput(workingElements, workingConnections, generateId);
+        const runIssue = getGenerateRunIssue(workingElements, workingConnections, generateId);
 
-        if (!input.prompt && !input.mediaUrl) {
-          const message = "Connect at least one prompt or source before running this generate node.";
-          setNodeState(generateId, { status: "error", error: message });
-          outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
+        if (runIssue) {
+          const title = runIssue === "Connect an Output node." ? "Connect an Output node" : "Generate needs input";
+          settleNode(generateId);
+          outputIds.forEach(settleNode);
           flushRunState();
-          anyError = true;
+          addToast({
+            title,
+            message: runIssue,
+            variant: "warning",
+          });
+          anyValidationIssue = true;
+          firstValidationIssue ??= runIssue;
+          continue;
+        }
+
+        if (input.mediaUrl && !selectedModel.supportsImageInput) {
+          const message = `The selected model (${selectedModel.label}) does not support image input. Connect a prompt-only workflow or switch to a model that accepts images.`;
+          settleNode(generateId);
+          outputIds.forEach(settleNode);
+          flushRunState();
+          addToast({
+            title: "Model cannot use this input",
+            message,
+            variant: "warning",
+          });
+          anyValidationIssue = true;
+          firstValidationIssue ??= message;
           continue;
         }
 
@@ -329,18 +382,8 @@ function ProjectCanvasInner({
         outputIds.forEach((id) => setNodeState(id, { status: "running", error: undefined }));
         flushRunState();
 
-        if (input.mediaUrl && !selectedModel.supportsImageInput) {
-          const message = `The selected model (${selectedModel.label}) does not support image input. Connect a prompt-only workflow or switch to a model that accepts images.`;
-          setNodeState(generateId, { status: "error", error: message });
-          outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
-          flushRunState();
-          anyError = true;
-          continue;
-        }
-
         const results = await Promise.all(
-          Array.from({ length: count }, async (_, index) => {
-            if (cancelledRef.current) return { index, result: { error: "Cancelled" } };
+          outputIds.map(async (_outputId, index) => {
             const result = await runGeneration({
               prompt: input.prompt,
               model: selectedModel.id,
@@ -352,13 +395,6 @@ function ProjectCanvasInner({
           })
         );
 
-        if (cancelledRef.current) {
-          setNodeState(generateId, { status: "idle" });
-          outputIds.forEach((id) => setNodeState(id, { status: "idle" }));
-          flushRunState();
-          break;
-        }
-
         const allUrls: string[] = [];
         let lastError: string | undefined;
 
@@ -367,21 +403,14 @@ function ProjectCanvasInner({
           if (result.url) {
             allUrls[index] = result.url;
             if (outputId) {
-              setNodeState(outputId, {
-                status: "done",
-                outputUrl: result.url,
-                outputUrls: [result.url],
-                error: undefined,
-              });
+              appendOutputResult(outputId, result.url);
             }
           } else {
-            lastError = result.error || "Generation failed";
-            anyError = true;
+            lastError = formatGenerationFailureForUser(result.error || "Generation failed");
+            anyGenerationError = true;
+            firstGenerationError ??= lastError;
             if (outputId) {
-              setNodeState(outputId, {
-                status: "error",
-                error: lastError,
-              });
+              settleNode(outputId);
             }
           }
         }
@@ -414,36 +443,40 @@ function ProjectCanvasInner({
           anySaveError = saveResults.some((result) => result.status === "rejected");
         } else {
           setNodeState(generateId, {
-            status: "error",
-            error: lastError || "Generation failed",
+            status: "idle",
+            outputUrl: undefined,
+            outputUrls: undefined,
+            error: undefined,
           });
         }
         flushRunState();
       }
 
-      if (cancelledRef.current) {
-        addToast({ title: "Workflow cancelled", message: "Generation was stopped.", variant: "info" });
-      } else if (anyError && anySaveError) {
-        addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
-      } else if (anyError) {
-        addToast({ title: "Workflow finished with errors", message: "Generation failed. Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
+      if (anyGenerationError && anySaveError) {
+        addToast({ title: "Workflow finished with errors", message: firstGenerationError ?? "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
+      } else if (anyGenerationError) {
+        addToast({ title: "Generation request failed", message: firstGenerationError ?? "Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anySaveError) {
         addToast({ title: "Workflow complete", message: "Outputs were created, but some gallery saves failed.", variant: "warning" });
+      } else if (anyValidationIssue) {
+        addToast({
+          title: "Workflow needs attention",
+          message: firstValidationIssue ?? "Some generate nodes were skipped.",
+          variant: "warning",
+        });
       } else {
         addToast({ title: "Workflow complete", message: "All nodes finished successfully.", variant: "success" });
       }
     } catch (err) {
       addToast({
         title: "Workflow failed",
-        message: err instanceof Error ? err.message : "An unexpected error occurred.",
+        message: formatGenerationFailureForUser(err),
         variant: "error",
       });
     } finally {
       runningRef.current = false;
       setRunning(false);
-      if (!cancelledRef.current) {
-        processQueueRef.current();
-      }
+      processQueueRef.current();
     }
   }, [elements, connections, project.id, replaceWorkflowGraph, commitWorkflowGraph, addToast]);
 
@@ -553,11 +586,11 @@ function ProjectCanvasInner({
         onSelect: () => setActiveTool("generate"),
       },
       {
-        id: "workflow-run",
-        title: "Run workflow",
-        section: "Workflow",
-        icon: <Play className="size-3.5" />,
-        onSelect: handleRun,
+        id: "node-output",
+        title: "Output node",
+        section: "Nodes",
+        icon: <ImageIcon className="size-3.5" />,
+        onSelect: () => setActiveTool("output"),
       },
       {
         id: "edit-undo",
@@ -658,7 +691,6 @@ function ProjectCanvasInner({
     ],
     [
       setActiveTool,
-      handleRun,
       canUndo,
       undo,
       canRedo,
@@ -780,17 +812,6 @@ function ProjectCanvasInner({
               {saveStatus === "saved" && "Saved"}
               {saveStatus === "error" && "Save failed"}
             </span>
-          )}
-
-          {running && (
-            <button
-              onClick={cancelRun}
-              className="flex items-center gap-1.5 rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-              title="Cancel running workflow"
-            >
-              <Square className="size-3" />
-              Stop
-            </button>
           )}
 
           {queueCount > 0 && (
