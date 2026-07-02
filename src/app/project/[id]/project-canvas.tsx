@@ -6,8 +6,10 @@ import {
   useResizablePanel,
 } from "@/components/ui/resizable-handle";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Check,
   Loader2,
   MousePointer2,
   Square,
@@ -34,9 +36,25 @@ import {
   Save,
   Bell,
   BellOff,
+  Search,
+  MoreHorizontal,
+  Settings,
+  X,
+  PanelRightOpen,
+  Crosshair,
+  Play,
+  ListFilter,
+  Pencil,
+  CopyPlus,
 } from "lucide-react";
 import { CanvasProvider, useCanvas } from "@/lib/canvas/context";
-import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/client-service";
+import {
+  deleteProject,
+  duplicateProject,
+  saveGeneratedMedia,
+  updateProjectName,
+  updateProjectWorkflow,
+} from "@/lib/projects/client-service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
@@ -60,7 +78,7 @@ import { sanitizeWorkflowForPersistence } from "@/lib/canvas/workflow-persistenc
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import { useRegisterCommands } from "@/lib/command-palette/context";
 import type { Project } from "@/lib/projects/service";
-import type { NodeStatus, WorkflowState } from "@/types/canvas";
+import type { CanvasElement, NodeStatus, NodeType, WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
   const initialWorkflow = useMemo(
@@ -174,6 +192,465 @@ export function ProjectCanvasEditor({ project }: { project: Project }) {
   );
 }
 
+function CanvasSearchModal({
+  query,
+  filter,
+  results,
+  selectedCount,
+  onQueryChange,
+  onFilterChange,
+  onClose,
+  onFocus,
+  onSelectVisible,
+  onDeleteVisible,
+}: {
+  query: string;
+  filter: CanvasNodeFilter;
+  results: CanvasElement[];
+  selectedCount: number;
+  onQueryChange: (query: string) => void;
+  onFilterChange: (filter: CanvasNodeFilter) => void;
+  onClose: () => void;
+  onFocus: (element: CanvasElement) => void;
+  onSelectVisible: () => void;
+  onDeleteVisible: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/25 px-4 pt-24" onClick={onClose}>
+      <div className="glass-panel-strong w-full max-w-2xl overflow-hidden rounded-2xl shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-white/70 bg-white/75 px-4 py-3">
+          <Search className="size-4 text-neutral-400" />
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Search nodes, campaign details, outputs, statuses..."
+            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-neutral-900 outline-none placeholder:text-neutral-400"
+          />
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900">
+            <X className="size-4" />
+          </button>
+        </div>
+        <CanvasFilterTabs value={filter} onChange={onFilterChange} />
+        <div className="max-h-[52vh] overflow-y-auto bg-white">
+          {results.length === 0 ? (
+            <p className="px-4 py-10 text-center text-sm text-neutral-400">No canvas items found.</p>
+          ) : (
+            results.map((element) => (
+              <button
+                key={element.id}
+                type="button"
+                onClick={() => onFocus(element)}
+                className="flex w-full items-center justify-between gap-3 border-b border-neutral-100 px-4 py-3 text-left hover:bg-neutral-50"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-neutral-900">{getElementLabel(element)}</span>
+                  <span className="mt-0.5 block truncate text-xs text-neutral-500">
+                    {element.nodeData?.nodeType ?? element.type} · {element.nodeData?.status ?? "canvas item"}
+                  </span>
+                </span>
+                <span className="rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-medium capitalize text-neutral-500">
+                  {getElementCategory(element)}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-neutral-100 bg-neutral-50 px-4 py-3">
+          <span className="text-xs text-neutral-500">
+            {results.length} visible · {selectedCount} selected in results
+          </span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onSelectVisible} disabled={results.length === 0} className="rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+              Select visible
+            </button>
+            <button type="button" onClick={onDeleteVisible} disabled={results.length === 0} className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+              Delete visible
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CanvasNavigatorDrawer({
+  query,
+  filter,
+  elements,
+  selectedIds,
+  onQueryChange,
+  onFilterChange,
+  onClose,
+  onFocus,
+  onSelect,
+  onRename,
+  onDuplicate,
+  onDelete,
+  onSelectVisible,
+}: {
+  query: string;
+  filter: CanvasNodeFilter;
+  elements: CanvasElement[];
+  selectedIds: string[];
+  onQueryChange: (query: string) => void;
+  onFilterChange: (filter: CanvasNodeFilter) => void;
+  onClose: () => void;
+  onFocus: (element: CanvasElement) => void;
+  onSelect: (id: string) => void;
+  onRename: (id: string, label: string) => void;
+  onDuplicate: (id: string) => void;
+  onDelete: (id: string) => void;
+  onSelectVisible: () => void;
+}) {
+  return (
+    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-white/70 bg-white/95 shadow-2xl backdrop-blur">
+      <div className="glass-panel-strong rounded-none border-x-0 border-t-0 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Navigator</h2>
+            <p className="text-xs text-neutral-500">Find, select, rename, duplicate, or delete canvas items.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2">
+          <Search className="size-3.5 text-neutral-400" />
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Filter navigator..."
+            className="min-w-0 flex-1 text-xs outline-none placeholder:text-neutral-400"
+          />
+        </div>
+      </div>
+      <CanvasFilterTabs value={filter} onChange={onFilterChange} compact />
+      <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-2">
+        <span className="text-xs text-neutral-500">{elements.length} visible</span>
+        <button type="button" onClick={onSelectVisible} disabled={elements.length === 0} className="rounded-md border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+          Select visible
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {elements.length === 0 ? (
+          <p className="px-4 py-10 text-center text-sm text-neutral-400">No items match this view.</p>
+        ) : (
+          elements.map((element) => {
+            const selected = selectedIds.includes(element.id);
+            return (
+              <div key={element.id} className={`border-b border-neutral-100 px-4 py-3 ${selected ? "bg-emerald-50/70" : "bg-white"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <button type="button" onClick={() => onFocus(element)} className="min-w-0 text-left">
+                    <span className="block truncate text-sm font-semibold text-neutral-900">{getElementLabel(element)}</span>
+                    <span className="mt-0.5 block truncate text-xs text-neutral-500">
+                      {element.nodeData?.nodeType ?? element.type} · {element.nodeData?.status ?? "canvas item"}
+                    </span>
+                  </button>
+                  <span className="rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-medium capitalize text-neutral-500">
+                    {getElementCategory(element)}
+                  </span>
+                </div>
+                <input
+                  value={element.customLabel ?? ""}
+                  onChange={(event) => onRename(element.id, event.target.value)}
+                  placeholder={element.nodeData?.label ?? element.type}
+                  className="mt-2 w-full rounded-md border border-neutral-200 px-2 py-1.5 text-xs outline-none focus:border-neutral-400"
+                />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => onSelect(element.id)} className="rounded border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
+                    Select
+                  </button>
+                  <button type="button" onClick={() => onFocus(element)} className="rounded border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
+                    Focus
+                  </button>
+                  <button type="button" onClick={() => onDuplicate(element.id)} className="rounded border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50">
+                    Duplicate
+                  </button>
+                  <button type="button" onClick={() => onDelete(element.id)} className="rounded border border-red-200 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CanvasFilterTabs({
+  value,
+  onChange,
+  compact = false,
+}: {
+  value: CanvasNodeFilter;
+  onChange: (filter: CanvasNodeFilter) => void;
+  compact?: boolean;
+}) {
+  const filters: { value: CanvasNodeFilter; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "marketing", label: "Marketing" },
+    { value: "technical", label: "Technical" },
+    { value: "outputs", label: "Outputs" },
+    { value: "review", label: "Review" },
+  ];
+  return (
+    <div className={`flex flex-wrap gap-1 border-b border-neutral-100 bg-neutral-50 ${compact ? "px-4 py-2" : "px-4 py-3"}`}>
+      {filters.map((filter) => (
+        <button
+          key={filter.value}
+          type="button"
+          onClick={() => onChange(filter.value)}
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            value === filter.value
+              ? "bg-neutral-900 text-white"
+              : "border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"
+          }`}
+        >
+          {filter.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RenameCampaignDialog({
+  value,
+  pending,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  value: string;
+  pending: boolean;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 px-4" onClick={onClose}>
+      <div className="glass-panel-strong w-full max-w-md overflow-hidden rounded-2xl shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/70 bg-white/75 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Rename campaign</h2>
+            <p className="text-xs text-neutral-500">Use a client-facing campaign name marketers can recognize quickly.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="space-y-3 bg-white px-4 py-4">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-500">Campaign name</span>
+            <input
+              autoFocus
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") onSubmit();
+                if (event.key === "Escape") onClose();
+              }}
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-500"
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-md border border-neutral-200 px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+              Cancel
+            </button>
+            <button type="button" onClick={onSubmit} disabled={pending || !value.trim()} className="inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800 disabled:opacity-50">
+              {pending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+              Save name
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CampaignSettingsDialog({
+  project,
+  projectName,
+  elementCount,
+  connectionCount,
+  selectedCount,
+  saveStatus,
+  autoSave,
+  onClose,
+  onRename,
+}: {
+  project: Project;
+  projectName: string;
+  elementCount: number;
+  connectionCount: number;
+  selectedCount: number;
+  saveStatus: string;
+  autoSave: boolean;
+  onClose: () => void;
+  onRename: () => void;
+}) {
+  const rows = [
+    ["Campaign", projectName],
+    ["Project ID", project.id],
+    ["Canvas items", String(elementCount)],
+    ["Connections", String(connectionCount)],
+    ["Selected", String(selectedCount)],
+    ["Save mode", autoSave ? "Auto-save" : "Manual save"],
+    ["Save status", saveStatus],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 px-4" onClick={onClose}>
+      <div className="glass-panel-strong w-full max-w-lg overflow-hidden rounded-2xl shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/70 bg-white/75 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Campaign settings</h2>
+            <p className="text-xs text-neutral-500">A quick operational snapshot for the current workspace.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="bg-white px-4 py-4">
+          <div className="overflow-hidden rounded-xl border border-neutral-200">
+            {rows.map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[120px_1fr] gap-3 border-b border-neutral-100 px-3 py-2 last:border-b-0">
+                <span className="text-xs font-medium text-neutral-500">{label}</span>
+                <span className="truncate text-xs text-neutral-900">{value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={onRename} className="rounded-md border border-neutral-200 px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+              Rename campaign
+            </button>
+            <button type="button" onClick={onClose} className="rounded-md bg-neutral-900 px-3 py-2 text-xs font-semibold text-white hover:bg-neutral-800">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDangerDialog({
+  action,
+  projectName,
+  elementCount,
+  confirmText,
+  pending,
+  onConfirmTextChange,
+  onClose,
+  onConfirm,
+}: {
+  action: Exclude<ConfirmAction, null>;
+  projectName: string;
+  elementCount: number;
+  confirmText: string;
+  pending: boolean;
+  onConfirmTextChange: (value: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const deletingCampaign = action === "delete-campaign";
+  const canConfirm = deletingCampaign ? confirmText.trim() === projectName : confirmText.trim().toLowerCase() === "clear";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" onClick={onClose}>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-red-100 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="border-b border-red-100 bg-red-50 px-4 py-3">
+          <h2 className="text-sm font-semibold text-red-900">
+            {deletingCampaign ? "Delete campaign?" : "Clear canvas?"}
+          </h2>
+          <p className="mt-1 text-xs leading-relaxed text-red-700">
+            {deletingCampaign
+              ? "This removes the campaign from the project list. This cannot be undone from the canvas."
+              : `This removes ${elementCount} canvas items and all connections. You can use Undo before leaving or reloading.`}
+          </p>
+        </div>
+        <div className="space-y-3 px-4 py-4">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-neutral-600">
+              Type {deletingCampaign ? `"${projectName}"` : '"clear"'} to confirm
+            </span>
+            <input
+              autoFocus
+              value={confirmText}
+              onChange={(event) => onConfirmTextChange(event.target.value)}
+              className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-red-400"
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-md border border-neutral-200 px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50">
+              Cancel
+            </button>
+            <button type="button" onClick={onConfirm} disabled={!canConfirm || pending} className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+              {pending ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+              {deletingCampaign ? "Delete campaign" : "Clear canvas"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type CanvasNodeFilter = "all" | "marketing" | "technical" | "outputs" | "review";
+type ConfirmAction = "clear-canvas" | "delete-campaign" | null;
+
+const TECHNICAL_NODE_TYPES = new Set<NodeType>(["prompt", "source", "generate", "output"]);
+
+function getElementLabel(element: CanvasElement) {
+  if (element.customLabel?.trim()) return element.customLabel.trim();
+  if (element.nodeData?.label) return element.nodeData.label;
+  if (element.text?.trim()) return element.text.trim();
+  return element.type.charAt(0).toUpperCase() + element.type.slice(1);
+}
+
+function getElementCategory(element: CanvasElement): Exclude<CanvasNodeFilter, "all"> {
+  if (element.nodeData?.nodeType === "output" || element.nodeData?.nodeType === "generate") return "outputs";
+  if (element.nodeData?.nodeType === "review") return "review";
+  if (element.nodeData && TECHNICAL_NODE_TYPES.has(element.nodeData.nodeType)) return "technical";
+  if (element.nodeData) return "marketing";
+  return "technical";
+}
+
+function getElementSearchText(element: CanvasElement) {
+  return [
+    getElementLabel(element),
+    element.type,
+    element.nodeData?.nodeType,
+    element.nodeData?.status,
+    element.nodeData?.error,
+    element.nodeData?.outputUrl,
+    ...(element.nodeData?.outputUrls ?? []),
+    ...(element.nodeData?.outputVersions ?? []).flatMap((version) => [
+      version.url,
+      version.operationType,
+      version.approvalState,
+      version.promptDelta,
+      version.editMetadata?.label,
+    ]),
+    ...Object.values(element.nodeData?.properties ?? {}),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function getElementCenter(element: CanvasElement) {
+  if (element.points?.length) {
+    const x = element.points.reduce((sum, point) => sum + point.x, 0) / element.points.length;
+    const y = element.points.reduce((sum, point) => sum + point.y, 0) / element.points.length;
+    return { x, y };
+  }
+  return {
+    x: element.x + element.width / 2,
+    y: element.y + element.height / 2,
+  };
+}
+
 function ProjectCanvasInner({
   project,
   saveStatus,
@@ -187,12 +664,14 @@ function ProjectCanvasInner({
   onToggleAutoSave: (value: boolean) => void;
   onManualSave: () => void;
 }) {
+  const router = useRouter();
   const {
     elements,
     connections,
     replaceWorkflowGraph,
     commitWorkflowGraph,
     removeElements,
+    selectElements,
     selectedIds,
     setActiveTool,
     setCamera,
@@ -200,7 +679,10 @@ function ProjectCanvasInner({
     redo,
     canUndo,
     canRedo,
+    duplicateElements,
     duplicateSelection,
+    renameElement,
+    selectAll,
     toggleSnapToGrid,
     toggleShowGrid,
     alignSelection,
@@ -208,8 +690,21 @@ function ProjectCanvasInner({
     setRunWorkflow,
   } = useCanvas();
   const { addToast } = useToast();
+  const [projectName, setProjectName] = useState(project.name);
   const [running, setRunning] = useState(false);
   const [queueCount, setQueueCount] = useState(0);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [navigatorOpen, setNavigatorOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [draftProjectName, setDraftProjectName] = useState(project.name);
+  const [confirmText, setConfirmText] = useState("");
+  const [nodeSearch, setNodeSearch] = useState("");
+  const [nodeFilter, setNodeFilter] = useState<CanvasNodeFilter>("all");
+  const [galleryOpenSignal, setGalleryOpenSignal] = useState(0);
+  const [projectActionPending, setProjectActionPending] = useState(false);
   const runningRef = useRef(false);
   const queueRef = useRef(0);
   const leftPanel = useResizablePanel("left", 224, { min: 180, max: 360 });
@@ -479,8 +974,246 @@ function ProjectCanvasInner({
 
   handleRunRef.current = handleRun;
 
+  useEffect(() => {
+    setProjectName(project.name);
+    setDraftProjectName(project.name);
+  }, [project.name]);
+
+  const filteredElements = useMemo(() => {
+    const query = nodeSearch.trim().toLowerCase();
+    return elements.filter((element) => {
+      if (nodeFilter !== "all" && getElementCategory(element) !== nodeFilter) return false;
+      if (!query) return true;
+      return getElementSearchText(element).includes(query);
+    });
+  }, [elements, nodeFilter, nodeSearch]);
+
+  const selectedCount = selectedIds.length;
+  const visibleSelectedCount = filteredElements.filter((element) =>
+    selectedIds.includes(element.id)
+  ).length;
+
+  const focusElement = useCallback(
+    (element: CanvasElement) => {
+      const center = getElementCenter(element);
+      setCamera({ x: center.x, y: center.y, zoom: 1 });
+      selectElements([element.id]);
+    },
+    [selectElements, setCamera]
+  );
+
+  const focusSelected = useCallback(() => {
+    const firstSelected = elements.find((element) => selectedIds.includes(element.id));
+    if (firstSelected) focusElement(firstSelected);
+  }, [elements, focusElement, selectedIds]);
+
+  const selectByFilter = useCallback(
+    (filter: CanvasNodeFilter) => {
+      const nextIds = elements
+        .filter((element) => filter === "all" || getElementCategory(element) === filter)
+        .map((element) => element.id);
+      selectElements(nextIds);
+      addToast({
+        title: "Selection updated",
+        message: `${nextIds.length} ${filter === "all" ? "canvas items" : filter} items selected.`,
+        variant: "info",
+      });
+    },
+    [addToast, elements, selectElements]
+  );
+
+  const clearCanvas = useCallback(() => {
+    commitWorkflowGraph([], []);
+    selectElements([]);
+    addToast({
+      title: "Canvas cleared",
+      message: "All nodes and connections were removed. Use Undo if this was accidental.",
+      variant: "warning",
+    });
+  }, [addToast, commitWorkflowGraph, selectElements]);
+
+  const submitRenameProject = useCallback(async () => {
+    const name = draftProjectName.trim();
+    if (!name || name === projectName) {
+      setRenameOpen(false);
+      setDraftProjectName(projectName);
+      return;
+    }
+    setProjectActionPending(true);
+    try {
+      const updated = await updateProjectName(project.id, name);
+      setProjectName(updated.name);
+      setDraftProjectName(updated.name);
+      setRenameOpen(false);
+      addToast({ title: "Campaign renamed", message: updated.name, variant: "success" });
+    } catch (err) {
+      addToast({
+        title: "Rename failed",
+        message: err instanceof Error ? err.message : "Could not rename this campaign.",
+        variant: "error",
+      });
+    } finally {
+      setProjectActionPending(false);
+    }
+  }, [addToast, draftProjectName, project.id, projectName]);
+
+  const submitDuplicateProject = useCallback(async () => {
+    setProjectActionPending(true);
+    try {
+      const duplicated = await duplicateProject(project.id);
+      addToast({
+        title: "Campaign duplicated",
+        message: `${duplicated.name} is ready to edit.`,
+        variant: "success",
+      });
+      router.push(`/project/${duplicated.id}`);
+    } catch (err) {
+      addToast({
+        title: "Duplicate failed",
+        message: err instanceof Error ? err.message : "Could not duplicate this campaign.",
+        variant: "error",
+      });
+    } finally {
+      setProjectActionPending(false);
+    }
+  }, [addToast, project.id, router]);
+
+  const submitDeleteProject = useCallback(async () => {
+    if (confirmText.trim() !== projectName) return;
+    setProjectActionPending(true);
+    try {
+      await deleteProject(project.id);
+      addToast({
+        title: "Campaign deleted",
+        message: `${projectName} was removed.`,
+        variant: "success",
+      });
+      router.push("/");
+    } catch (err) {
+      addToast({
+        title: "Delete failed",
+        message: err instanceof Error ? err.message : "Could not delete this campaign.",
+        variant: "error",
+      });
+    } finally {
+      setProjectActionPending(false);
+    }
+  }, [addToast, confirmText, project.id, projectName, router]);
+
+  const openSearch = useCallback(() => {
+    setSearchOpen(true);
+    setNavigatorOpen(false);
+  }, []);
+
+  const openNavigator = useCallback(() => {
+    setNavigatorOpen(true);
+    setSearchOpen(false);
+  }, []);
+
   const commands = useMemo(
     () => [
+      {
+        id: "campaign-rename",
+        title: "Rename campaign",
+        section: "Campaign",
+        icon: <Pencil className="size-3.5" />,
+        onSelect: () => {
+          setDraftProjectName(projectName);
+          setRenameOpen(true);
+        },
+      },
+      {
+        id: "campaign-settings",
+        title: "Campaign settings",
+        section: "Campaign",
+        icon: <Settings className="size-3.5" />,
+        onSelect: () => setSettingsOpen(true),
+      },
+      {
+        id: "campaign-duplicate",
+        title: "Duplicate campaign",
+        section: "Campaign",
+        icon: <CopyPlus className="size-3.5" />,
+        onSelect: submitDuplicateProject,
+      },
+      {
+        id: "campaign-delete",
+        title: "Delete campaign",
+        section: "Campaign",
+        icon: <Trash2 className="size-3.5" />,
+        onSelect: () => {
+          setConfirmText("");
+          setConfirmAction("delete-campaign");
+        },
+      },
+      {
+        id: "campaign-run",
+        title: running ? "Queue workflow run" : "Run workflow",
+        section: "Campaign",
+        icon: <Play className="size-3.5" />,
+        onSelect: handleRun,
+      },
+      {
+        id: "campaign-gallery",
+        title: "Open gallery",
+        section: "Campaign",
+        icon: <ImageIcon className="size-3.5" />,
+        onSelect: () => setGalleryOpenSignal((value) => value + 1),
+      },
+      {
+        id: "canvas-search",
+        title: "Search canvas",
+        section: "Canvas",
+        shortcut: "Ctrl+F",
+        icon: <Search className="size-3.5" />,
+        onSelect: openSearch,
+      },
+      {
+        id: "canvas-navigator",
+        title: "Open navigator",
+        section: "Canvas",
+        icon: <PanelRightOpen className="size-3.5" />,
+        onSelect: openNavigator,
+      },
+      {
+        id: "canvas-select-all",
+        title: "Select all canvas items",
+        section: "Canvas",
+        shortcut: "Ctrl+A",
+        icon: <MousePointer2 className="size-3.5" />,
+        onSelect: selectAll,
+      },
+      {
+        id: "canvas-select-marketing",
+        title: "Select marketing nodes",
+        section: "Canvas",
+        icon: <ListFilter className="size-3.5" />,
+        onSelect: () => selectByFilter("marketing"),
+      },
+      {
+        id: "canvas-select-outputs",
+        title: "Select output nodes",
+        section: "Canvas",
+        icon: <ListFilter className="size-3.5" />,
+        onSelect: () => selectByFilter("outputs"),
+      },
+      {
+        id: "canvas-focus-selection",
+        title: "Focus selected item",
+        section: "Canvas",
+        icon: <Crosshair className="size-3.5" />,
+        onSelect: focusSelected,
+      },
+      {
+        id: "canvas-clear",
+        title: "Clear canvas",
+        section: "Canvas",
+        icon: <Trash2 className="size-3.5" />,
+        onSelect: () => {
+          setConfirmText("");
+          setConfirmAction("clear-canvas");
+        },
+      },
       {
         id: "tool-select",
         title: "Select tool",
@@ -693,12 +1426,21 @@ function ProjectCanvasInner({
       canRedo,
       redo,
       duplicateSelection,
+      focusSelected,
+      handleRun,
+      openNavigator,
+      openSearch,
+      projectName,
+      selectAll,
+      selectByFilter,
       selectedIds,
       removeElements,
       alignSelection,
       setCamera,
       toggleShowGrid,
       toggleSnapToGrid,
+      running,
+      submitDuplicateProject,
     ]
   );
 
@@ -709,22 +1451,98 @@ function ProjectCanvasInner({
     return () => setRunWorkflow(undefined);
   }, [handleRun, setRunWorkflow]);
 
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        openSearch();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [openSearch]);
+
   return (
-    <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-white text-neutral-900">
-      <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
-        <div className="flex items-center gap-3">
+    <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-[var(--oc-surface)] text-neutral-900">
+      <header className="glass-panel-strong z-20 flex flex-wrap items-center justify-between gap-3 border-x-0 border-t-0 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Link
             href="/"
             className="flex size-8 items-center justify-center rounded-md hover:bg-neutral-100"
           >
             <ArrowLeft className="size-4" />
           </Link>
-          <div>
-            <h1 className="text-sm font-semibold">{project.name}</h1>
-            <p className="text-xs text-neutral-500">Build your workflow</p>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-sm font-semibold">{projectName}</h1>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftProjectName(projectName);
+                  setRenameOpen(true);
+                }}
+                className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                title="Rename campaign"
+                aria-label="Rename campaign"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            </div>
+            <p className="text-xs text-neutral-500">Build your campaign</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="hidden items-center gap-1 rounded-lg border border-white/70 bg-white/70 p-1 shadow-sm backdrop-blur md:flex">
+            <button
+              type="button"
+              onClick={openSearch}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white"
+              title="Search canvas"
+            >
+              <Search className="size-3.5" />
+              Search
+            </button>
+            <button
+              type="button"
+              onClick={openNavigator}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white"
+              title="Open navigator"
+            >
+              <PanelRightOpen className="size-3.5" />
+              Navigator
+            </button>
+            <button
+              type="button"
+              onClick={selectedCount > 0 ? () => removeElements(selectedIds) : undefined}
+              disabled={selectedCount === 0}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-white disabled:text-neutral-300 disabled:hover:bg-transparent"
+              title="Delete selected"
+            >
+              <Trash2 className="size-3.5" />
+              Delete {selectedCount > 0 ? `(${selectedCount})` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmText("");
+                setConfirmAction("clear-canvas");
+              }}
+              disabled={elements.length === 0}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:text-neutral-300 disabled:hover:bg-transparent"
+              title="Clear canvas"
+            >
+              Clear
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={running && queueCount > 4}
+            className="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {running ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+            {running ? "Queue run" : "Run"}
+          </button>
           <div className="flex items-center gap-0.5 rounded-md border border-neutral-200 bg-white p-0.5">
             <button
               onClick={undo}
@@ -818,16 +1636,136 @@ function ProjectCanvasInner({
             </span>
           )}
 
-          <OutputGalleryButton projectId={project.id} />
+          <OutputGalleryButton projectId={project.id} openSignal={galleryOpenSignal} />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreOpen((value) => !value)}
+              className="flex size-8 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+              title="More campaign actions"
+              aria-label="More campaign actions"
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-white/70 bg-white/95 py-1 shadow-xl backdrop-blur">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setDraftProjectName(projectName);
+                    setRenameOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                >
+                  <Pencil className="size-3.5 text-neutral-400" />
+                  Rename campaign
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                >
+                  <Settings className="size-3.5 text-neutral-400" />
+                  Campaign settings
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    submitDuplicateProject();
+                  }}
+                  disabled={projectActionPending}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
+                >
+                  <CopyPlus className="size-3.5 text-neutral-400" />
+                  Duplicate campaign
+                </button>
+                <div className="my-1 border-t border-neutral-100" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    openSearch();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 md:hidden"
+                >
+                  <Search className="size-3.5 text-neutral-400" />
+                  Search canvas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    openNavigator();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100 md:hidden"
+                >
+                  <PanelRightOpen className="size-3.5 text-neutral-400" />
+                  Navigator
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    selectAll();
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                >
+                  <MousePointer2 className="size-3.5 text-neutral-400" />
+                  Select all nodes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    selectByFilter("marketing");
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                >
+                  <ListFilter className="size-3.5 text-neutral-400" />
+                  Select marketing nodes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setConfirmText("");
+                    setConfirmAction("clear-canvas");
+                  }}
+                  disabled={elements.length === 0}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 hover:bg-red-50 disabled:text-neutral-300"
+                >
+                  <Trash2 className="size-3.5" />
+                  Clear canvas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setConfirmText("");
+                    setConfirmAction("delete-campaign");
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete campaign
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
         <aside
-          className="relative overflow-y-auto border-r border-neutral-200 bg-neutral-50"
+          className="glass-panel relative z-10 overflow-y-auto border-y-0 border-l-0 bg-white/60"
           style={{ width: leftPanel.width }}
         >
-          <AIPanel projectId={project.id} projectName={project.name} />
+          <AIPanel projectId={project.id} projectName={projectName} />
           <ToolsPanel />
           <ResizableHandle
             onPointerDown={leftPanel.startResize(1)}
@@ -843,7 +1781,7 @@ function ProjectCanvasInner({
         </main>
 
         <aside
-          className="relative overflow-y-auto border-l border-neutral-200 bg-white"
+          className="glass-panel relative z-10 overflow-y-auto border-y-0 border-r-0 bg-white/70"
           style={{ width: rightPanel.width }}
         >
           <ResizableHandle
@@ -853,6 +1791,100 @@ function ProjectCanvasInner({
           <PropertiesPanel />
         </aside>
       </div>
+
+      {searchOpen && (
+        <CanvasSearchModal
+          query={nodeSearch}
+          filter={nodeFilter}
+          results={filteredElements}
+          selectedCount={visibleSelectedCount}
+          onQueryChange={setNodeSearch}
+          onFilterChange={setNodeFilter}
+          onClose={() => setSearchOpen(false)}
+          onFocus={(element) => {
+            focusElement(element);
+            setSearchOpen(false);
+          }}
+          onSelectVisible={() => selectElements(filteredElements.map((element) => element.id))}
+          onDeleteVisible={() => {
+            removeElements(filteredElements.map((element) => element.id));
+            setSearchOpen(false);
+          }}
+        />
+      )}
+
+      {navigatorOpen && (
+        <CanvasNavigatorDrawer
+          query={nodeSearch}
+          filter={nodeFilter}
+          elements={filteredElements}
+          selectedIds={selectedIds}
+          onQueryChange={setNodeSearch}
+          onFilterChange={setNodeFilter}
+          onClose={() => setNavigatorOpen(false)}
+          onFocus={focusElement}
+          onSelect={(id) => selectElements([id])}
+          onRename={renameElement}
+          onDuplicate={(id) => duplicateElements([id])}
+          onDelete={(id) => removeElements([id])}
+          onSelectVisible={() => selectElements(filteredElements.map((element) => element.id))}
+        />
+      )}
+
+      {renameOpen && (
+        <RenameCampaignDialog
+          value={draftProjectName}
+          pending={projectActionPending}
+          onChange={setDraftProjectName}
+          onClose={() => {
+            setRenameOpen(false);
+            setDraftProjectName(projectName);
+          }}
+          onSubmit={submitRenameProject}
+        />
+      )}
+
+      {settingsOpen && (
+        <CampaignSettingsDialog
+          project={project}
+          projectName={projectName}
+          elementCount={elements.length}
+          connectionCount={connections.length}
+          selectedCount={selectedCount}
+          saveStatus={saveStatus}
+          autoSave={autoSave}
+          onClose={() => setSettingsOpen(false)}
+          onRename={() => {
+            setSettingsOpen(false);
+            setDraftProjectName(projectName);
+            setRenameOpen(true);
+          }}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmDangerDialog
+          action={confirmAction}
+          projectName={projectName}
+          elementCount={elements.length}
+          confirmText={confirmText}
+          pending={projectActionPending}
+          onConfirmTextChange={setConfirmText}
+          onClose={() => {
+            setConfirmAction(null);
+            setConfirmText("");
+          }}
+          onConfirm={() => {
+            if (confirmAction === "clear-canvas") {
+              clearCanvas();
+              setConfirmAction(null);
+              setConfirmText("");
+              return;
+            }
+            submitDeleteProject();
+          }}
+        />
+      )}
     </div>
   );
 }

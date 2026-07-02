@@ -52,6 +52,52 @@ export async function updateProjectWorkflow(
   return { ...data, workflow: normalizeWorkflow(data.workflow) } as Project;
 }
 
+export async function updateProjectName(
+  id: string,
+  name: string
+): Promise<Project> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Failed to rename campaign");
+  return { ...data, workflow: normalizeWorkflow(data.workflow) } as Project;
+}
+
+export async function duplicateProject(id: string): Promise<Project> {
+  const supabase = createClient();
+  const { data: current, error: currentError } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (currentError || !current) {
+    throw new Error(currentError?.message ?? "Campaign not found");
+  }
+
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({
+      folder_id: current.folder_id,
+      name: `${current.name} copy`,
+      workflow: current.workflow,
+      config: { ...(current.config ?? {}), pinned: false, archived: false, archived_at: null },
+    })
+    .select()
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Failed to duplicate campaign");
+  return { ...data, workflow: normalizeWorkflow(data.workflow) } as Project;
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function saveGeneratedMedia(input: GeneratedMediaInput): Promise<GeneratedMedia> {
   const supabase = createClient();
   const { data, error } = await supabase

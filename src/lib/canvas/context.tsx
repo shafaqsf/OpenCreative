@@ -71,6 +71,7 @@ type CanvasContextValue = {
   ) => void;
 
   copyToClipboard: (ids: string[]) => void;
+  duplicateElements: (ids: string[]) => void;
   duplicateSelection: () => void;
   selectAll: () => void;
   alignSelection: (alignment: "left" | "center-h" | "right" | "top" | "center-v" | "bottom") => void;
@@ -380,6 +381,21 @@ export function CanvasProvider({
     selectElements(clones.map((el) => el.id));
   }, [present.elements, selectedIds, addElements, selectElements]);
 
+  const duplicateElements = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const clones = cloneElements(
+        present.elements.filter((el) => idSet.has(el.id)),
+        20,
+        20
+      );
+      addElements(clones);
+      selectElements(clones.map((el) => el.id));
+    },
+    [present.elements, addElements, selectElements]
+  );
+
   const selectAll = useCallback(() => {
     selectElements(present.elements.map((el) => el.id));
   }, [present.elements, selectElements]);
@@ -621,6 +637,7 @@ export function CanvasProvider({
       updateNodeProperties,
       updateNodeStatus,
       copyToClipboard,
+      duplicateElements,
       duplicateSelection,
       selectAll,
       alignSelection,
@@ -661,6 +678,7 @@ export function CanvasProvider({
       updateNodeProperties,
       updateNodeStatus,
       copyToClipboard,
+      duplicateElements,
       duplicateSelection,
       selectAll,
       alignSelection,

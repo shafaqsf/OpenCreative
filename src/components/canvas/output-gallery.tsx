@@ -31,10 +31,20 @@ type GalleryItem = {
   nodeData?: NodeData;
 };
 
-export function OutputGalleryButton({ projectId }: { projectId: string }) {
+export function OutputGalleryButton({
+  projectId,
+  openSignal = 0,
+}: {
+  projectId: string;
+  openSignal?: number;
+}) {
   const { elements, updateElement } = useCanvas();
   const [open, setOpen] = useState(false);
   const [library, setLibrary] = useState<GeneratedMedia[]>([]);
+
+  useEffect(() => {
+    if (openSignal > 0) setOpen(true);
+  }, [openSignal]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,7 +169,7 @@ function OutputGalleryModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-6xl flex-col rounded-lg border border-neutral-200 bg-white shadow-2xl"
+        className="glass-panel-strong flex max-h-[90vh] w-full max-w-6xl flex-col rounded-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
