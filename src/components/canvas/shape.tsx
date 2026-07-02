@@ -6,8 +6,8 @@ import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 import { useCanvas } from "@/lib/canvas/context";
-import { getGenerationModel } from "@/lib/canvas/generation-models";
-import { getGenerateRunIssue } from "@/lib/canvas/workflow-engine";
+import { GENERATION_MODELS, getGenerationModel } from "@/lib/canvas/generation-models";
+import { collectGenerateInput, getConnectedOutputIds, getGenerateRunIssue } from "@/lib/canvas/workflow-engine";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/toast/context";
 
@@ -182,6 +182,10 @@ function WorkflowNode({
   const generationModel = nodeType === "generate" ? getGenerationModel(nodeData.properties.model) : null;
   const generateRunIssue =
     nodeType === "generate" ? getGenerateRunIssue(elements, connections, element.id) : undefined;
+  const generateInput =
+    nodeType === "generate" ? collectGenerateInput(elements, connections, element.id) : undefined;
+  const generateOutputCount =
+    nodeType === "generate" ? getConnectedOutputIds(elements, connections, element.id).length : 0;
 
   return (
     <g>
@@ -276,14 +280,13 @@ function WorkflowNode({
           {status === "error" && (
             <div
               style={{
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0 10px",
-                fontSize: 10,
+                margin: "0 10px 5px",
+                borderRadius: 5,
+                background: "#fef2f2",
+                padding: "4px 6px",
+                fontSize: 9,
                 color: "#dc2626",
-                textAlign: "center",
+                lineHeight: 1.25,
                 wordBreak: "break-word",
               }}
             >
@@ -386,7 +389,7 @@ function WorkflowNode({
             </div>
           )}
 
-          {!showMedia && status === "idle" && (
+          {!showMedia && status !== "running" && (
             <div
               style={{
                 flex: 1,
@@ -399,43 +402,17 @@ function WorkflowNode({
               }}
             >
               {nodeType === "generate" ? (
-                <>
-                  <span style={{ fontSize: 10, color: "#525252", fontWeight: 500, textAlign: "center" }}>
-                    {generationModel?.label}
-                  </span>
-                  <span style={{ fontSize: 10, color: "#a3a3a3", textTransform: "capitalize" }}>
-                    {generationModel?.outputType}
-                  </span>
-                  {generateRunIssue ? (
-                    <span style={{ fontSize: 9, color: "#dc2626", textAlign: "center", lineHeight: 1.25 }}>
-                      {getGenerateIssueLabel(generateRunIssue)}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        runWorkflow?.();
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        padding: "5px 14px",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: "#fff",
-                        background: "#171717",
-                        border: "none",
-                        borderRadius: 6,
-                        cursor: "pointer",
-                        lineHeight: 1,
-                      }}
-                    >
-                      Run
-                    </button>
-                  )}
-                </>
+                <GenerateNodeControls
+                  elementId={element.id}
+                  nodeData={nodeData}
+                  modelLabel={generationModel?.label ?? "Unknown model"}
+                  outputType={generationModel?.outputType ?? "image"}
+                  inputReady={Boolean(generateInput?.prompt || generateInput?.mediaUrl)}
+                  outputReady={generateOutputCount > 0}
+                  issue={generateRunIssue}
+                  selected={isSelected}
+                  onRun={() => runWorkflow?.()}
+                />
               ) : nodeType === "source" ? (
                 <SourceNodeControls elementId={element.id} nodeData={nodeData} compact />
               ) : nodeType === "output" ? (
@@ -472,46 +449,6 @@ function WorkflowNode({
             </div>
           )}
 
-          {status === "done" && nodeType === "generate" && (
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 6,
-                padding: "0 12px",
-              }}
-            >
-              <span style={{ fontSize: 10, color: "#525252", fontWeight: 500 }}>
-                Done
-              </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  runWorkflow?.();
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "3px 10px",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  color: "#525252",
-                  background: "#f5f5f4",
-                  border: "1px solid #e5e5e4",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                  lineHeight: 1,
-                }}
-              >
-                Re-run
-              </button>
-            </div>
-          )}
         </div>
       </foreignObject>
 
@@ -658,6 +595,128 @@ function SourceNodeControls({
   );
 }
 
+function GenerateNodeControls({
+  elementId,
+  nodeData,
+  modelLabel,
+  outputType,
+  inputReady,
+  outputReady,
+  issue,
+  selected,
+  onRun,
+}: {
+  elementId: string;
+  nodeData: NodeData;
+  modelLabel: string;
+  outputType: string;
+  inputReady: boolean;
+  outputReady: boolean;
+  issue?: string;
+  selected: boolean;
+  onRun: () => void;
+}) {
+  const { updateNodeProperties } = useCanvas();
+  const ready = inputReady && outputReady && !issue;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, width: "100%" }}>
+      {selected ? (
+        <select
+          value={nodeData.properties.model ?? ""}
+          onChange={(event) => {
+            const nextModel = getGenerationModel(event.target.value);
+            updateNodeProperties(elementId, {
+              ...nodeData.properties,
+              model: nextModel.id,
+              outputType: nextModel.outputType,
+            });
+          }}
+          style={{
+            width: "100%",
+            border: "1px solid #e5e5e5",
+            borderRadius: 5,
+            padding: "4px 6px",
+            color: "#262626",
+            background: "#fff",
+            fontSize: 9,
+            outline: "none",
+          }}
+        >
+          {GENERATION_MODELS.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span style={{ fontSize: 10, color: "#525252", fontWeight: 500, textAlign: "center" }}>
+          {modelLabel}
+        </span>
+      )}
+      <div style={{ display: "grid", gap: 3, width: "100%" }}>
+        <ReadinessRow ready={inputReady} label={inputReady ? "Input ready" : getGenerateIssueLabel(issue ?? "")} />
+        <ReadinessRow ready={outputReady} label={outputReady ? "Output connected" : "Connect Output"} />
+      </div>
+      <span style={{ fontSize: 9, color: "#a3a3a3", textAlign: "center", textTransform: "capitalize" }}>
+        Creates {outputType}
+      </span>
+      {ready && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRun();
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            padding: "5px 12px",
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#fff",
+            background: "#171717",
+            border: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+            lineHeight: 1,
+          }}
+        >
+          Run
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ReadinessRow({ ready, label }: { ready: boolean; label: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        color: ready ? "#047857" : "#dc2626",
+        fontSize: 9,
+        lineHeight: 1.2,
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 999,
+          background: ready ? "#10b981" : "#ef4444",
+          flex: "0 0 auto",
+        }}
+      />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+    </div>
+  );
+}
+
 function SourceMediaActions({
   elementId,
   nodeData,
@@ -723,11 +782,12 @@ function getSelectedOutputIndex(nodeData: NodeData) {
 }
 
 function getGenerateIssueLabel(issue: string) {
-  if (issue.includes("output node before")) return "Connect Output";
-  if (issue.includes("prompt node")) return "Add Prompt Text";
-  if (issue.includes("source node")) return "Add Source Media";
-  if (issue.includes("connected output")) return "Select Output Media";
-  return "Connect Input";
+  if (!issue) return "Connect input";
+  if (issue.includes("Output")) return "Connect an Output node";
+  if (issue.includes("prompt text")) return "Add prompt text";
+  if (issue.includes("generated media")) return "Select generated media";
+  if (issue.includes("Upload") || issue.includes("media")) return "Upload or paste media";
+  return issue.replace(/\.$/, "");
 }
 
 function starPoints(cx: number, cy: number, rx: number, ry: number) {

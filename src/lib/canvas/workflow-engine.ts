@@ -226,7 +226,7 @@ export function getGenerateRunIssue(
   generateId: string
 ): string | undefined {
   if (getConnectedOutputIds(elements, connections, generateId).length === 0) {
-    return "Connect at least one output node before running this generate node.";
+    return "Connect an Output node.";
   }
 
   const input = collectGenerateInput(elements, connections, generateId);
@@ -239,22 +239,22 @@ export function getGenerateRunIssue(
     );
 
     if (hasPrompt && !hasSource && !hasMediaOutput) {
-      return "Add text to the connected prompt node before running this generate node.";
+      return "Add prompt text.";
     }
 
     if (hasSource && !hasPrompt && !hasMediaOutput) {
-      return "Add a URL or upload media to the connected source node before running this generate node.";
+      return "Upload or paste media.";
     }
 
     if (hasMediaOutput && !hasPrompt && !hasSource) {
-      return "Select or create media in the connected output node before running this generate node.";
+      return "Select generated media.";
     }
 
     if (upstreamNodes.length > 0) {
-      return "Add prompt text, source media, or selected output media before running this generate node.";
+      return "Add prompt text, upload media, or select generated media.";
     }
 
-    return "Connect at least one prompt, source, or output node before running this generate node.";
+    return "Connect a Prompt, Source, or Output node.";
   }
 
   return undefined;
