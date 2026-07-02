@@ -197,32 +197,16 @@ function ProjectCanvasInner({
     alignSelection,
     distributeSelection,
     setRunWorkflow,
-    updateNodeStatus,
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
   const [queueCount, setQueueCount] = useState(0);
   const runningRef = useRef(false);
-  const cancelledRef = useRef(false);
   const queueRef = useRef(0);
   const leftPanel = useResizablePanel("left", 224, { min: 180, max: 360 });
   const rightPanel = useResizablePanel("right", 256, { min: 200, max: 400 });
 
   useKeyboardShortcuts();
-
-  const cancelRun = useCallback(() => {
-    cancelledRef.current = true;
-    queueRef.current = 0;
-    setQueueCount(0);
-    for (const el of elements) {
-      if (el.nodeData && (el.nodeData.status === "running" || el.nodeData.status === "idle")) {
-        updateNodeStatus(el.id, "idle");
-      }
-    }
-    setRunning(false);
-    runningRef.current = false;
-    addToast({ title: "Workflow cancelled", message: "Generation stopped.", variant: "info" });
-  }, [elements, updateNodeStatus, addToast]);
 
   const handleRunRef = useRef<() => void>(() => {});
   const processQueueRef = useRef<() => void>(() => {});
@@ -245,7 +229,6 @@ function ProjectCanvasInner({
 
     runningRef.current = true;
     setRunning(true);
-    cancelledRef.current = false;
 
     let anyError = false;
     let anySaveError = false;
@@ -329,8 +312,6 @@ function ProjectCanvasInner({
       }
 
       for (const generateId of prepared.generateIds) {
-        if (cancelledRef.current) break;
-
         const generateNode = getNode(workingElements, generateId);
         if (!generateNode) continue;
 
@@ -342,6 +323,11 @@ function ProjectCanvasInner({
           const message = "Connect at least one output node before running this generate node.";
           setNodeState(generateId, { status: "error", error: message });
           flushRunState();
+          addToast({
+            title: "Generate needs an output",
+            message,
+            variant: "warning",
+          });
           anyError = true;
           continue;
         }
@@ -351,6 +337,11 @@ function ProjectCanvasInner({
           setNodeState(generateId, { status: "error", error: message });
           outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
           flushRunState();
+          addToast({
+            title: "Generate needs an input",
+            message,
+            variant: "warning",
+          });
           anyError = true;
           continue;
         }
@@ -370,7 +361,6 @@ function ProjectCanvasInner({
 
         const results = await Promise.all(
           outputIds.map(async (_outputId, index) => {
-            if (cancelledRef.current) return { index, result: { error: "Cancelled" } };
             const result = await runGeneration({
               prompt: input.prompt,
               model: selectedModel.id,
@@ -381,13 +371,6 @@ function ProjectCanvasInner({
             return { index, result };
           })
         );
-
-        if (cancelledRef.current) {
-          setNodeState(generateId, { status: "idle" });
-          outputIds.forEach((id) => setNodeState(id, { status: "idle" }));
-          flushRunState();
-          break;
-        }
 
         const allUrls: string[] = [];
         let lastError: string | undefined;
@@ -446,9 +429,7 @@ function ProjectCanvasInner({
         flushRunState();
       }
 
-      if (cancelledRef.current) {
-        addToast({ title: "Workflow cancelled", message: "Generation was stopped.", variant: "info" });
-      } else if (anyError && anySaveError) {
+      if (anyError && anySaveError) {
         addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
       } else if (anyError) {
         addToast({ title: "Workflow finished with errors", message: "Generation failed. Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
@@ -466,9 +447,7 @@ function ProjectCanvasInner({
     } finally {
       runningRef.current = false;
       setRunning(false);
-      if (!cancelledRef.current) {
-        processQueueRef.current();
-      }
+      processQueueRef.current();
     }
   }, [elements, connections, project.id, replaceWorkflowGraph, commitWorkflowGraph, addToast]);
 
@@ -805,17 +784,6 @@ function ProjectCanvasInner({
               {saveStatus === "saved" && "Saved"}
               {saveStatus === "error" && "Save failed"}
             </span>
-          )}
-
-          {running && (
-            <button
-              onClick={cancelRun}
-              className="flex items-center gap-1.5 rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-              title="Cancel running workflow"
-            >
-              <Square className="size-3" />
-              Stop
-            </button>
           )}
 
           {queueCount > 0 && (
