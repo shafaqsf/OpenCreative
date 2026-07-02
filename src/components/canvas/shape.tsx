@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { Pencil, Eye } from "lucide-react";
+import { useState, type CSSProperties } from "react";
+import { Download, Eye, Pencil, Trash2, Upload } from "lucide-react";
 import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 import { useCanvas } from "@/lib/canvas/context";
 import { getGenerationModel } from "@/lib/canvas/generation-models";
 import { getGenerateRunIssue } from "@/lib/canvas/workflow-engine";
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/lib/toast/context";
 
 const NODE_COLORS: Record<NodeType, string> = {
   prompt: "#fafafa",
@@ -161,7 +163,7 @@ function WorkflowNode({
   const strokeColor =
     status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : border;
   const strokeW = status === "running" ? 2 : 1.5;
-  const { elements, connections, runWorkflow, selectedIds } = useCanvas();
+  const { elements, connections, runWorkflow, selectedIds, updateNodeProperties } = useCanvas();
 
   const sourceUrl = nodeType === "source" ? nodeData.properties.url?.trim() : undefined;
   const selectedOutputIndex = getSelectedOutputIndex(nodeData);
@@ -309,7 +311,7 @@ function WorkflowNode({
                   controls={isSelected}
                   style={{
                     maxWidth: "100%",
-                    maxHeight: isSelected && nodeType === "output" ? "60%" : "100%",
+                    maxHeight: isSelected && (nodeType === "output" || nodeType === "source") ? "58%" : "100%",
                     objectFit: "contain",
                     borderRadius: 4,
                     flex: 1,
@@ -321,7 +323,7 @@ function WorkflowNode({
                   alt=""
                   style={{
                     maxWidth: "100%",
-                    maxHeight: isSelected && nodeType === "output" ? "60%" : "100%",
+                    maxHeight: isSelected && (nodeType === "output" || nodeType === "source") ? "58%" : "100%",
                     objectFit: "contain",
                     borderRadius: 4,
                     flex: 1,
@@ -365,6 +367,11 @@ function WorkflowNode({
                   }}
                 >
                   {nodeData.properties.fileName}
+                </div>
+              )}
+              {isSelected && nodeType === "source" && (
+                <div style={{ width: "100%" }}>
+                  <SourceMediaActions elementId={element.id} nodeData={nodeData} url={mediaUrl} />
                 </div>
               )}
               {isSelected && nodeType === "output" && displayUrl && (
@@ -429,22 +436,36 @@ function WorkflowNode({
                     </button>
                   )}
                 </>
+              ) : nodeType === "source" ? (
+                <SourceNodeControls elementId={element.id} nodeData={nodeData} compact />
               ) : nodeType === "output" ? (
                 <span style={{ fontSize: 10, color: "#a3a3a3" }}>Awaiting result</span>
               ) : nodeType === "prompt" ? (
-                <span
-                  style={{
-                    maxWidth: "100%",
-                    color: promptContent ? "#525252" : "#a3a3a3",
-                    fontSize: 10,
-                    lineHeight: 1.35,
-                    overflow: "hidden",
-                    textAlign: "center",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {promptContent || "Empty prompt"}
-                </span>
+                isSelected ? (
+                  <PromptNodeEditor
+                    value={nodeData.properties.content ?? ""}
+                    onChange={(content) =>
+                      updateNodeProperties(element.id, {
+                        ...nodeData.properties,
+                        content,
+                      })
+                    }
+                  />
+                ) : (
+                  <span
+                    style={{
+                      maxWidth: "100%",
+                      color: promptContent ? "#525252" : "#a3a3a3",
+                      fontSize: 10,
+                      lineHeight: 1.35,
+                      overflow: "hidden",
+                      textAlign: "center",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {promptContent || "Empty prompt"}
+                  </span>
+                )
               ) : (
                 <span style={{ fontSize: 10, color: "#a3a3a3" }}>No source selected</span>
               )}
@@ -503,6 +524,195 @@ function WorkflowNode({
     </g>
   );
 }
+
+function PromptNodeEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <textarea
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder="Write prompt..."
+      style={{
+        width: "100%",
+        minHeight: 48,
+        resize: "none",
+        border: "1px solid #e5e5e5",
+        borderRadius: 6,
+        padding: "6px 7px",
+        color: "#262626",
+        background: "#fff",
+        outline: "none",
+        fontSize: 10,
+        lineHeight: 1.35,
+      }}
+    />
+  );
+}
+
+function SourceNodeControls({
+  elementId,
+  nodeData,
+  compact = false,
+}: {
+  elementId: string;
+  nodeData: NodeData;
+  compact?: boolean;
+}) {
+  const { updateNodeProperties } = useCanvas();
+  const { addToast } = useToast();
+  const [uploading, setUploading] = useState(false);
+
+  async function upload(file: File) {
+    const mediaType = file.type.startsWith("video/") ? "video" : "image";
+    const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
+    const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    setUploading(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.storage
+        .from("assets")
+        .upload(key, file, { contentType: file.type || undefined, upsert: false });
+      if (error) throw new Error(error.message);
+      const { data } = supabase.storage.from("assets").getPublicUrl(key);
+      updateNodeProperties(elementId, {
+        ...nodeData.properties,
+        url: data.publicUrl,
+        fileType: mediaType,
+        fileName: file.name,
+      });
+      addToast({
+        title: "Source uploaded",
+        message: `${file.name} is ready on the canvas.`,
+        variant: "success",
+      });
+    } catch (err) {
+      addToast({
+        title: "Upload failed",
+        message: err instanceof Error ? err.message : "Could not upload this file.",
+        variant: "error",
+      });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, width: "100%" }}>
+      <label
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 4,
+          borderRadius: 6,
+          background: "#171717",
+          color: "#fff",
+          padding: compact ? "5px 8px" : "6px 10px",
+          fontSize: 10,
+          fontWeight: 600,
+          cursor: uploading ? "default" : "pointer",
+          opacity: uploading ? 0.6 : 1,
+        }}
+      >
+        <Upload size={11} />
+        {uploading ? "Uploading..." : "Upload media"}
+        <input
+          type="file"
+          accept="image/*,video/*"
+          disabled={uploading}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (file) upload(file);
+          }}
+          style={{ display: "none" }}
+        />
+      </label>
+      <input
+        value={nodeData.properties.url ?? ""}
+        onChange={(event) =>
+          updateNodeProperties(elementId, {
+            ...nodeData.properties,
+            url: event.target.value,
+            fileName: nodeData.properties.fileName || "",
+          })
+        }
+        placeholder="Paste media URL"
+        style={{
+          width: "100%",
+          minWidth: 0,
+          border: "1px solid #e5e5e5",
+          borderRadius: 5,
+          padding: "4px 6px",
+          color: "#525252",
+          fontSize: 9,
+          outline: "none",
+        }}
+      />
+    </div>
+  );
+}
+
+function SourceMediaActions({
+  elementId,
+  nodeData,
+  url,
+}: {
+  elementId: string;
+  nodeData: NodeData;
+  url?: string;
+}) {
+  const { updateNodeProperties } = useCanvas();
+
+  return (
+    <div style={{ display: "flex", gap: 4, width: "100%" }}>
+      <button
+        onClick={() => url && window.open(url, "_blank")}
+        disabled={!url}
+        style={mediaActionButtonStyle}
+        title="Open source media"
+      >
+        <Eye size={10} />
+        Open
+      </button>
+      <button
+        onClick={() =>
+          updateNodeProperties(elementId, {
+            ...nodeData.properties,
+            url: "",
+            fileName: "",
+          })
+        }
+        style={{ ...mediaActionButtonStyle, color: "#dc2626" }}
+        title="Clear source media"
+      >
+        <Trash2 size={10} />
+        Clear
+      </button>
+    </div>
+  );
+}
+
+const mediaActionButtonStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 3,
+  flex: 1,
+  border: "1px solid #e5e5e5",
+  borderRadius: 4,
+  background: "#fff",
+  color: "#525252",
+  padding: "3px 5px",
+  fontSize: 10,
+  fontWeight: 600,
+  cursor: "pointer",
+};
 
 function getSelectedOutputIndex(nodeData: NodeData) {
   const outputCount = nodeData.outputUrls?.length ?? 0;
@@ -576,7 +786,7 @@ function OutputNodeControls({
   elementId: string;
   index: number;
 }) {
-  const { updateNodeProperties } = useCanvas();
+  const { updateElement, updateNodeProperties } = useCanvas();
   const fmtKey = `fmt_${index}`;
   const nameKey = `name_${index}`;
   const options = outputUrls && outputUrls.length > 0 ? outputUrls : [url];
@@ -586,19 +796,107 @@ function OutputNodeControls({
   const [nameInput, setNameInput] = useState(nodeData.properties[nameKey] || "");
   const fileName = `${nodeData.properties[nameKey] || `output-${index + 1}`}.${format}`;
 
+  function selectOutput(nextIndex: number) {
+    updateNodeProperties(elementId, {
+      ...nodeData.properties,
+      selectedOutputIndex: String(nextIndex),
+    });
+  }
+
+  function clearSelected() {
+    const nextUrls = options.filter((_item, itemIndex) => itemIndex !== index);
+    const nextIndex = Math.max(0, Math.min(index, nextUrls.length - 1));
+    updateElement(elementId, {
+      nodeData: {
+        ...nodeData,
+        status: nextUrls.length > 0 ? "done" : "idle",
+        outputUrl: nextUrls[nextIndex],
+        outputUrls: nextUrls.length > 0 ? nextUrls : undefined,
+        error: undefined,
+        properties: {
+          ...nodeData.properties,
+          selectedOutputIndex: String(nextIndex),
+        },
+      },
+    });
+  }
+
+  function clearAll() {
+    updateElement(elementId, {
+      nodeData: {
+        ...nodeData,
+        status: "idle",
+        outputUrl: undefined,
+        outputUrls: undefined,
+        error: undefined,
+        properties: {
+          ...nodeData.properties,
+          selectedOutputIndex: "0",
+        },
+      },
+    });
+  }
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
       {options.length > 1 && (
+        <div style={{ display: "flex", gap: 3, overflowX: "auto", width: "100%", paddingBottom: 1 }}>
+          {options.map((itemUrl, itemIndex) => {
+            const itemIsVideo = nodeData.properties.outputType === "video" || /\.(mp4|webm|mov)(?:$|\?)/i.test(itemUrl);
+            return (
+              <button
+                key={`${itemUrl}-${itemIndex}`}
+                onClick={() => selectOutput(itemIndex)}
+                title={`Use output ${itemIndex + 1} downstream`}
+                style={{
+                  width: 30,
+                  height: 24,
+                  flex: "0 0 auto",
+                  overflow: "hidden",
+                  borderRadius: 4,
+                  border: itemIndex === index ? "2px solid #171717" : "1px solid #d4d4d4",
+                  padding: 0,
+                  background: "#f5f5f5",
+                  cursor: "pointer",
+                }}
+              >
+                {itemIsVideo ? (
+                  <video src={itemUrl} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <img src={itemUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+        {options.length > 1 && (
+          <select
+            value={String(index)}
+            onChange={(e) => selectOutput(Number.parseInt(e.target.value, 10))}
+            title="Selected media for downstream nodes"
+            style={{
+              fontSize: 10,
+              padding: "1px 4px",
+              borderRadius: 4,
+              border: "1px solid #e5e5e5",
+              background: "#fff",
+              outline: "none",
+              cursor: "pointer",
+              width: 44,
+            }}
+          >
+            {options.map((_item, itemIndex) => (
+              <option key={itemIndex} value={itemIndex}>
+                {itemIndex + 1}
+              </option>
+            ))}
+          </select>
+        )}
         <select
-          value={String(index)}
-          onChange={(e) => {
-            const selectedOutputIndex = e.target.value;
-            updateNodeProperties(elementId, {
-              ...nodeData.properties,
-              selectedOutputIndex,
-            });
-          }}
-          title="Selected media for downstream nodes"
+          value={format}
+          onChange={(e) => updateNodeProperties(elementId, { ...nodeData.properties, [fmtKey]: e.target.value })}
           style={{
             fontSize: 10,
             padding: "1px 4px",
@@ -609,132 +907,126 @@ function OutputNodeControls({
             cursor: "pointer",
             width: 44,
           }}
-        >
-          {options.map((_item, itemIndex) => (
-            <option key={itemIndex} value={itemIndex}>
-              {itemIndex + 1}
-            </option>
-          ))}
+          >
+          {isVideo ? (
+            <>
+              <option value="mp4">MP4</option>
+              <option value="webm">WebM</option>
+              <option value="mov">MOV</option>
+            </>
+          ) : (
+            <>
+              <option value="png">PNG</option>
+              <option value="jpg">JPG</option>
+              <option value="webp">WebP</option>
+            </>
+          )}
         </select>
-      )}
-      <select
-        value={format}
-        onChange={(e) => updateNodeProperties(elementId, { ...nodeData.properties, [fmtKey]: e.target.value })}
-        style={{
-          fontSize: 10,
-          padding: "1px 4px",
-          borderRadius: 4,
-          border: "1px solid #e5e5e5",
-          background: "#fff",
-          outline: "none",
-          cursor: "pointer",
-          width: 56,
-        }}
-      >
-        {isVideo ? (
-          <>
-            <option value="mp4">MP4</option>
-            <option value="webm">WebM</option>
-            <option value="mov">MOV</option>
-          </>
-        ) : (
-          <>
-            <option value="png">PNG</option>
-            <option value="jpg">JPG</option>
-            <option value="webp">WebP</option>
-          </>
-        )}
-      </select>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {renaming ? (
-          <input
-            autoFocus
-            value={nameInput}
-            onChange={(e) => setNameInput(e.target.value)}
-            onBlur={() => {
-              const trimmed = nameInput.trim();
-              updateNodeProperties(elementId, { ...nodeData.properties, [nameKey]: trimmed || `output-${index + 1}` });
-              setRenaming(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {renaming ? (
+            <input
+              autoFocus
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onBlur={() => {
                 const trimmed = nameInput.trim();
                 updateNodeProperties(elementId, { ...nodeData.properties, [nameKey]: trimmed || `output-${index + 1}` });
                 setRenaming(false);
-              }
-              if (e.key === "Escape") { setNameInput(nodeData.properties[nameKey] || ""); setRenaming(false); }
-            }}
-            placeholder="filename"
-            style={{
-              width: "100%",
-              fontSize: 10,
-              padding: "1px 4px",
-              borderRadius: 4,
-              border: "1px solid #d4d4d4",
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
-        ) : (
-          <button
-            onClick={() => { setNameInput(nodeData.properties[nameKey] || `output-${index + 1}`); setRenaming(true); }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              padding: "1px 4px",
-              fontSize: 10,
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              color: "#525252",
-              width: "100%",
-              borderRadius: 4,
-            }}
-            title="Rename file"
-          >
-            <Pencil size={10} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {nodeData.properties[nameKey] || `output-${index + 1}`}
-            </span>
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const trimmed = nameInput.trim();
+                  updateNodeProperties(elementId, { ...nodeData.properties, [nameKey]: trimmed || `output-${index + 1}` });
+                  setRenaming(false);
+                }
+                if (e.key === "Escape") { setNameInput(nodeData.properties[nameKey] || ""); setRenaming(false); }
+              }}
+              placeholder="filename"
+              style={{
+                width: "100%",
+                fontSize: 10,
+                padding: "1px 4px",
+                borderRadius: 4,
+                border: "1px solid #d4d4d4",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          ) : (
+            <button
+              onClick={() => { setNameInput(nodeData.properties[nameKey] || `output-${index + 1}`); setRenaming(true); }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+                padding: "1px 4px",
+                fontSize: 10,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                color: "#525252",
+                width: "100%",
+                borderRadius: 4,
+              }}
+              title="Rename file"
+            >
+              <Pencil size={10} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {nodeData.properties[nameKey] || `output-${index + 1}`}
+              </span>
+            </button>
+          )}
+        </div>
+        <button
+          onClick={() => window.open(url, "_blank")}
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            padding: "2px 6px",
+            borderRadius: 4,
+            border: "1px solid #e5e5e5",
+            background: "#fff",
+            color: "#525252",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+          }}
+          title="Preview"
+        >
+          <Eye size={10} />
+        </button>
+        <a
+          href={url}
+          download={fileName}
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            padding: "2px 6px",
+            borderRadius: 4,
+            background: "#171717",
+            color: "#fff",
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+            display: "inline-flex",
+            alignItems: "center",
+          }}
+          title="Download selected media"
+        >
+          <Download size={10} />
+        </a>
+      </div>
+      <div style={{ display: "flex", gap: 4, width: "100%" }}>
+        <button onClick={clearSelected} style={mediaActionButtonStyle}>
+          <Trash2 size={10} />
+          Clear selected
+        </button>
+        {options.length > 1 && (
+          <button onClick={clearAll} style={{ ...mediaActionButtonStyle, color: "#dc2626" }}>
+            Clear all
           </button>
         )}
       </div>
-      <button
-        onClick={() => window.open(url, "_blank")}
-        style={{
-          fontSize: 10,
-          fontWeight: 600,
-          padding: "2px 6px",
-          borderRadius: 4,
-          border: "1px solid #e5e5e5",
-          background: "#fff",
-          color: "#525252",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          gap: 2,
-        }}
-        title="Preview"
-      >
-        <Eye size={10} />
-      </button>
-      <a
-        href={url}
-        download={fileName}
-        style={{
-          fontSize: 10,
-          fontWeight: 600,
-          padding: "2px 8px",
-          borderRadius: 4,
-          background: "#171717",
-          color: "#fff",
-          textDecoration: "none",
-          whiteSpace: "nowrap",
-        }}
-      >
-        Download
-      </a>
     </div>
   );
 }
