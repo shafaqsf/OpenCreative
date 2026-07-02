@@ -224,10 +224,6 @@ export function ToolsPanel() {
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[10px] leading-relaxed text-neutral-400">
-          Click a node, then click the canvas to place it. Drag from an output
-          port to an input port to connect nodes.
-        </p>
       </Panel>
       <Panel title="Templates" defaultOpen={false}>
         <div className="flex flex-col gap-1">

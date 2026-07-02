@@ -546,6 +546,13 @@ function ProjectCanvasInner({
         onSelect: () => setActiveTool("generate"),
       },
       {
+        id: "node-output",
+        title: "Output node",
+        section: "Nodes",
+        icon: <ImageIcon className="size-3.5" />,
+        onSelect: () => setActiveTool("output"),
+      },
+      {
         id: "workflow-run",
         title: "Run workflow",
         section: "Workflow",
@@ -774,6 +781,20 @@ function ProjectCanvasInner({
               {saveStatus === "error" && "Save failed"}
             </span>
           )}
+
+          <button
+            onClick={handleRun}
+            disabled={running}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              running
+                ? "bg-neutral-100 text-neutral-400"
+                : "bg-neutral-900 text-white hover:bg-neutral-800"
+            }`}
+            title="Run workflow"
+          >
+            {running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
+            {running ? "Running" : "Run"}
+          </button>
 
           {queueCount > 0 && (
             <span className="flex items-center gap-1.5 text-xs text-amber-600">
