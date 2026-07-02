@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Copy, Folder, Search, Grid3X3, List, Pencil, Pin, Trash2, FolderX } from "lucide-react";
+import { Check, Copy, Folder, Search, Grid3X3, List, Pencil, Pin, Trash2, FolderX, X } from "lucide-react";
 import type { Project } from "@/lib/projects/service";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { ProjectThumbnail } from "./project-thumbnail";
@@ -34,6 +34,8 @@ export function FolderContent({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [view, setView] = useState<ViewMode>("grid");
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [projectDraft, setProjectDraft] = useState("");
 
   const filteredProjects = useMemo(() => {
     let result = projects.filter((p) => {
@@ -53,9 +55,16 @@ export function FolderContent({
     return result;
   }, [projects, query, sort]);
 
-  function renameProject(project: Project) {
-    const name = window.prompt("Rename project", project.name)?.trim();
+  function startRenameProject(project: Project) {
+    setEditingProjectId(project.id);
+    setProjectDraft(project.name);
+  }
+
+  function commitRenameProject(project: Project) {
+    const name = projectDraft.trim();
     if (name && name !== project.name) onRenameProject?.(project.id, name);
+    setEditingProjectId(null);
+    setProjectDraft("");
   }
 
   return (
@@ -127,17 +136,48 @@ export function FolderContent({
                   </div>
                 </div>
                 <div className="p-3 pr-24">
-                  <p className="text-sm font-medium text-neutral-900 line-clamp-1">
-                    {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
-                    {project.name}
-                  </p>
+                  {editingProjectId === project.id ? (
+                    <input
+                      autoFocus
+                      value={projectDraft}
+                      onClick={(e) => e.preventDefault()}
+                      onChange={(e) => setProjectDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRenameProject(project);
+                        if (e.key === "Escape") setEditingProjectId(null);
+                      }}
+                      className="w-full rounded-md border border-neutral-200 px-2 py-1 text-sm outline-none focus:border-neutral-400"
+                    />
+                  ) : (
+                    <p className="text-sm font-medium text-neutral-900 line-clamp-1">
+                      {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
+                      {project.name}
+                    </p>
+                  )}
                   <p className="text-xs text-neutral-500">Canvas workflow</p>
                 </div>
               </Link>
               <div className="absolute bottom-3 right-3 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                {onRenameProject && (
+                {editingProjectId === project.id ? (
+                  <>
+                    <button
+                      onClick={() => commitRenameProject(project)}
+                      className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                      title="Save name"
+                    >
+                      <Check className="size-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setEditingProjectId(null)}
+                      className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
+                      title="Cancel rename"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </>
+                ) : onRenameProject && (
                   <button
-                    onClick={() => renameProject(project)}
+                    onClick={() => startRenameProject(project)}
                     className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900"
                     title="Rename project"
                   >
@@ -199,16 +239,39 @@ export function FolderContent({
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-neutral-900">
-                    {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
-                    {project.name}
-                  </p>
+                  {editingProjectId === project.id ? (
+                    <input
+                      autoFocus
+                      value={projectDraft}
+                      onClick={(e) => e.preventDefault()}
+                      onChange={(e) => setProjectDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRenameProject(project);
+                        if (e.key === "Escape") setEditingProjectId(null);
+                      }}
+                      className="w-full rounded-md border border-neutral-200 px-2 py-1 text-sm outline-none focus:border-neutral-400"
+                    />
+                  ) : (
+                    <p className="truncate text-sm font-medium text-neutral-900">
+                      {project.config?.pinned && <Pin className="mr-1 inline size-3 fill-neutral-900" />}
+                      {project.name}
+                    </p>
+                  )}
                   <p className="text-xs text-neutral-500">Canvas workflow</p>
                 </div>
               </Link>
               <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                {onRenameProject && (
-                  <button onClick={() => renameProject(project)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title="Rename project">
+                {editingProjectId === project.id ? (
+                  <>
+                    <button onClick={() => commitRenameProject(project)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title="Save name">
+                      <Check className="size-3.5" />
+                    </button>
+                    <button onClick={() => setEditingProjectId(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title="Cancel rename">
+                      <X className="size-3.5" />
+                    </button>
+                  </>
+                ) : onRenameProject && (
+                  <button onClick={() => startRenameProject(project)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" title="Rename project">
                     <Pencil className="size-3.5" />
                   </button>
                 )}

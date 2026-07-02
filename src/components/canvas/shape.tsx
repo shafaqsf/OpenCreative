@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { Pencil, Eye } from "lucide-react";
 import type { CanvasElement, NodeData, NodeType } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 import { getBounds } from "@/lib/canvas/hit-test";
 import { useCanvas } from "@/lib/canvas/context";
+import { getGenerationModel } from "@/lib/canvas/generation-models";
 
 const NODE_COLORS: Record<NodeType, string> = {
   prompt: "#fafafa",
@@ -157,10 +160,20 @@ function WorkflowNode({
   const strokeColor =
     status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : border;
   const strokeW = status === "running" ? 2 : 1.5;
-  const { runWorkflow } = useCanvas();
+  const { runWorkflow, selectedIds } = useCanvas();
 
+  const sourceUrl = nodeType === "source" ? nodeData.properties.url?.trim() : undefined;
   const displayUrl = outputUrl || (outputUrls && outputUrls.length > 0 ? outputUrls[0] : undefined);
-  const showMedia = (status === "done" || status === "idle") && displayUrl;
+  const mediaUrl = sourceUrl || displayUrl;
+  const outputType = nodeData.properties.outputType || nodeData.properties.fileType;
+  const showMedia =
+    Boolean(mediaUrl) &&
+    (nodeType === "source" || (nodeType === "output" && (status === "done" || status === "idle")));
+  const showVideo =
+    outputType === "video" || /\.(mp4|webm|mov)(?:$|\?)/i.test(mediaUrl ?? "");
+  const isSelected = selectedIds.includes(element.id);
+  const promptContent = nodeType === "prompt" ? nodeData.properties.content?.trim() : "";
+  const generationModel = nodeType === "generate" ? getGenerationModel(nodeData.properties.model) : null;
 
   return (
     <g>
@@ -169,7 +182,7 @@ function WorkflowNode({
         y={minY}
         width={w}
         height={h}
-        rx={10}
+        rx={8}
         fill={NODE_COLORS[nodeType]}
         stroke={strokeColor}
         strokeWidth={strokeW}
@@ -181,7 +194,7 @@ function WorkflowNode({
           y={minY}
           width={w}
           height={h}
-          rx={10}
+          rx={8}
           fill="none"
           stroke="#2563eb"
           strokeWidth={1.5}
@@ -210,7 +223,7 @@ function WorkflowNode({
               fontSize: 11,
               fontWeight: 600,
               color: "#525252",
-              letterSpacing: "0.02em",
+              letterSpacing: 0,
             }}
           >
             {element.customLabel || label}
@@ -275,21 +288,67 @@ function WorkflowNode({
               style={{
                 flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 padding: "2px 6px 6px",
+                gap: 4,
+                position: "relative",
               }}
             >
-              <img
-                src={displayUrl!}
-                alt=""
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "100%",
-                  objectFit: "contain",
-                  borderRadius: 4,
-                }}
-              />
+              {showVideo ? (
+                <video
+                  src={mediaUrl}
+                  muted
+                  controls={isSelected}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: isSelected && nodeType === "output" ? "60%" : "100%",
+                    objectFit: "contain",
+                    borderRadius: 4,
+                    flex: 1,
+                  }}
+                />
+              ) : (
+                <img
+                  src={mediaUrl}
+                  alt=""
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: isSelected && nodeType === "output" ? "60%" : "100%",
+                    objectFit: "contain",
+                    borderRadius: 4,
+                    flex: 1,
+                  }}
+                />
+              )}
+              {nodeType === "output" && outputUrls && outputUrls.length > 1 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    background: "rgba(0,0,0,0.65)",
+                    color: "#fff",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: "2px 6px",
+                    borderRadius: 8,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {outputUrls.length}
+                </div>
+              )}
+              {isSelected && nodeType === "output" && displayUrl && (
+                <OutputNodeControls
+                  url={displayUrl}
+                  outputUrls={outputUrls}
+                  nodeData={nodeData}
+                  elementId={element.id}
+                  index={0}
+                />
+              )}
             </div>
           )}
 
@@ -306,39 +365,60 @@ function WorkflowNode({
               }}
             >
               {nodeType === "generate" ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    runWorkflow?.();
-                  }}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "5px 14px",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: "#fff",
-                    background: "#171717",
-                    border: "none",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    lineHeight: 1,
-                  }}
-                >
-                  Run
-                </button>
+                <>
+                  <span style={{ fontSize: 10, color: "#525252", fontWeight: 500, textAlign: "center" }}>
+                    {generationModel?.label}
+                  </span>
+                  <span style={{ fontSize: 10, color: "#a3a3a3", textTransform: "capitalize" }}>
+                    {generationModel?.outputType} x{nodeData.properties.count || "1"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      runWorkflow?.();
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "5px 14px",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "#fff",
+                      background: "#171717",
+                      border: "none",
+                      borderRadius: 6,
+                      cursor: "pointer",
+                      lineHeight: 1,
+                    }}
+                  >
+                    Run
+                  </button>
+                </>
               ) : nodeType === "output" ? (
                 <span style={{ fontSize: 10, color: "#a3a3a3" }}>Awaiting result</span>
               ) : nodeType === "prompt" ? (
-                <span style={{ fontSize: 10, color: "#a3a3a3" }}>Text input</span>
+                <span
+                  style={{
+                    maxWidth: "100%",
+                    color: promptContent ? "#525252" : "#a3a3a3",
+                    fontSize: 10,
+                    lineHeight: 1.35,
+                    overflow: "hidden",
+                    textAlign: "center",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {promptContent || "Empty prompt"}
+                </span>
               ) : (
-                <span style={{ fontSize: 10, color: "#a3a3a3" }}>Media input</span>
+                <span style={{ fontSize: 10, color: "#a3a3a3" }}>No source selected</span>
               )}
             </div>
           )}
 
-          {status === "done" && !displayUrl && nodeType === "generate" && (
+          {status === "done" && nodeType === "generate" && (
             <div
               style={{
                 flex: 1,
@@ -354,6 +434,7 @@ function WorkflowNode({
                 Done
               </span>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   runWorkflow?.();
@@ -430,6 +511,152 @@ function Arrow({ element }: { element: CanvasElement }) {
       <line x1={x1} y1={y1} x2={x2} y2={y2} />
       <polygon points={`${x2},${y2} ${hx1},${hy1} ${hx2},${hy2}`} />
     </g>
+  );
+}
+
+function OutputNodeControls({
+  url,
+  outputUrls,
+  nodeData,
+  elementId,
+  index,
+}: {
+  url: string;
+  outputUrls?: string[];
+  nodeData: NodeData;
+  elementId: string;
+  index: number;
+}) {
+  const { updateNodeProperties } = useCanvas();
+  const fmtKey = `fmt_${index}`;
+  const nameKey = `name_${index}`;
+  const isVideo = nodeData.properties.outputType === "video";
+  const format = nodeData.properties[fmtKey] || (isVideo ? "mp4" : "png");
+  const [renaming, setRenaming] = useState(false);
+  const [nameInput, setNameInput] = useState(nodeData.properties[nameKey] || "");
+  const fileName = `${nodeData.properties[nameKey] || `output-${index + 1}`}.${format}`;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%" }}>
+      <select
+        value={format}
+        onChange={(e) => updateNodeProperties(elementId, { ...nodeData.properties, [fmtKey]: e.target.value })}
+        style={{
+          fontSize: 10,
+          padding: "1px 4px",
+          borderRadius: 4,
+          border: "1px solid #e5e5e5",
+          background: "#fff",
+          outline: "none",
+          cursor: "pointer",
+          width: 56,
+        }}
+      >
+        {isVideo ? (
+          <>
+            <option value="mp4">MP4</option>
+            <option value="webm">WebM</option>
+            <option value="mov">MOV</option>
+          </>
+        ) : (
+          <>
+            <option value="png">PNG</option>
+            <option value="jpg">JPG</option>
+            <option value="webp">WebP</option>
+          </>
+        )}
+      </select>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {renaming ? (
+          <input
+            autoFocus
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            onBlur={() => {
+              const trimmed = nameInput.trim();
+              updateNodeProperties(elementId, { ...nodeData.properties, [nameKey]: trimmed || `output-${index + 1}` });
+              setRenaming(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const trimmed = nameInput.trim();
+                updateNodeProperties(elementId, { ...nodeData.properties, [nameKey]: trimmed || `output-${index + 1}` });
+                setRenaming(false);
+              }
+              if (e.key === "Escape") { setNameInput(nodeData.properties[nameKey] || ""); setRenaming(false); }
+            }}
+            placeholder="filename"
+            style={{
+              width: "100%",
+              fontSize: 10,
+              padding: "1px 4px",
+              borderRadius: 4,
+              border: "1px solid #d4d4d4",
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+          />
+        ) : (
+          <button
+            onClick={() => { setNameInput(nodeData.properties[nameKey] || `output-${index + 1}`); setRenaming(true); }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+              padding: "1px 4px",
+              fontSize: 10,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              color: "#525252",
+              width: "100%",
+              borderRadius: 4,
+            }}
+            title="Rename file"
+          >
+            <Pencil size={10} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {nodeData.properties[nameKey] || `output-${index + 1}`}
+            </span>
+          </button>
+        )}
+      </div>
+      <button
+        onClick={() => window.open(url, "_blank")}
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          padding: "2px 6px",
+          borderRadius: 4,
+          border: "1px solid #e5e5e5",
+          background: "#fff",
+          color: "#525252",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+        }}
+        title="Preview"
+      >
+        <Eye size={10} />
+      </button>
+      <a
+        href={url}
+        download={fileName}
+        style={{
+          fontSize: 10,
+          fontWeight: 600,
+          padding: "2px 8px",
+          borderRadius: 4,
+          background: "#171717",
+          color: "#fff",
+          textDecoration: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Download
+      </a>
+    </div>
   );
 }
 

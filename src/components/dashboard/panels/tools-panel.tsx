@@ -22,6 +22,8 @@ import {
   Copy,
   Pencil,
   Pin,
+  Check,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { Panel } from "./panel";
@@ -68,6 +70,8 @@ export function ToolsPanel() {
   const [custom, setCustom] = useState<Template[]>(() => loadCustomTemplates());
   const [saveOpen, setSaveOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateDraft, setTemplateDraft] = useState("");
 
   const builtIn = useMemo(() => getBuiltInTemplates(), []);
   const visibleCustom = useMemo(
@@ -117,11 +121,18 @@ export function ToolsPanel() {
     saveCustomTemplates(next);
   }
 
-  function renameTemplate(template: Template) {
-    const name = window.prompt("Rename template", template.name)?.trim();
+  function startRenameTemplate(template: Template) {
+    setEditingTemplateId(template.id);
+    setTemplateDraft(template.name);
+  }
+
+  function commitRenameTemplate(template: Template) {
+    const name = templateDraft.trim();
     if (name && name !== template.name) {
       updateTemplate(template.id, { name });
     }
+    setEditingTemplateId(null);
+    setTemplateDraft("");
   }
 
   function duplicateTemplate(template: Template) {
@@ -162,7 +173,7 @@ export function ToolsPanel() {
   return (
     <>
       <Panel title="Annotate">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="flex flex-col gap-1">
           {tools.map(({ id, label, Icon, shortcut }) => (
             <button
               key={id}
@@ -172,14 +183,17 @@ export function ToolsPanel() {
                 e.dataTransfer.effectAllowed = "copy";
               }}
               onClick={() => setActiveTool(id)}
-              title={`${label} — ${shortcut}`}
-              className={`flex aspect-square flex-col items-center justify-center gap-1 rounded-md border text-xs transition-colors ${
+              className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
                 activeTool === id
-                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  ? "border-neutral-300 bg-neutral-100 text-neutral-900 shadow-inner"
                   : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
               }`}
             >
-              <Icon className="size-4" strokeWidth={1.75} />
+              <Icon className="size-3.5" strokeWidth={1.75} />
+              <div className="text-left leading-tight">
+                <div>{label}</div>
+                <div className="text-[10px] opacity-60">{shortcut}</div>
+              </div>
             </button>
           ))}
         </div>
@@ -197,7 +211,7 @@ export function ToolsPanel() {
               onClick={() => setActiveTool(id)}
               className={`flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors ${
                 activeTool === id
-                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  ? "border-neutral-300 bg-neutral-100 text-neutral-900 shadow-inner"
                   : "border-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
               }`}
             >
@@ -244,49 +258,80 @@ export function ToolsPanel() {
               onDragStart={(e) => startTemplateDrag(e, template)}
               className="group flex items-center gap-1 rounded-md border border-transparent px-2.5 py-2 text-xs text-neutral-600 hover:bg-neutral-100"
             >
-              <button
-                onClick={() => applyTemplateToCanvas(template)}
-                title="Drag onto the canvas or click to insert"
-                className="flex flex-1 items-center gap-2 text-left"
-              >
-                {template.pinned ? (
-                  <Pin className="size-3.5 fill-neutral-900 text-neutral-900" strokeWidth={1.75} />
-                ) : (
-                  <Save className="size-3.5" strokeWidth={1.75} />
-                )}
-                <div className="leading-tight">
-                  <div>{template.name}</div>
-                  <div className="text-[10px] opacity-60">{template.description}</div>
-                </div>
-              </button>
-              <button
-                onClick={() => updateTemplate(template.id, { pinned: !template.pinned })}
-                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
-                title={template.pinned ? "Unpin template" : "Pin template"}
-              >
-                <Pin className={`size-3 ${template.pinned ? "fill-neutral-900 text-neutral-900" : ""}`} />
-              </button>
-              <button
-                onClick={() => renameTemplate(template)}
-                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
-                title="Rename template"
-              >
-                <Pencil className="size-3" />
-              </button>
-              <button
-                onClick={() => duplicateTemplate(template)}
-                className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
-                title="Duplicate template"
-              >
-                <Copy className="size-3" />
-              </button>
-              <button
-                onClick={() => deleteTemplate(template.id)}
-                className="p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
-                title="Delete template"
-              >
-                <Trash2 className="size-3" />
-              </button>
+              {editingTemplateId === template.id ? (
+                <>
+                  <input
+                    autoFocus
+                    value={templateDraft}
+                    onChange={(e) => setTemplateDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRenameTemplate(template);
+                      if (e.key === "Escape") setEditingTemplateId(null);
+                    }}
+                    className="min-w-0 flex-1 rounded-md border border-neutral-200 px-2 py-1 text-xs outline-none focus:border-neutral-400"
+                  />
+                  <button
+                    onClick={() => commitRenameTemplate(template)}
+                    className="p-1 text-neutral-400 hover:text-neutral-900"
+                    title="Save template name"
+                  >
+                    <Check className="size-3" />
+                  </button>
+                  <button
+                    onClick={() => setEditingTemplateId(null)}
+                    className="p-1 text-neutral-400 hover:text-neutral-900"
+                    title="Cancel rename"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => applyTemplateToCanvas(template)}
+                    title="Drag onto the canvas or click to insert"
+                    className="flex flex-1 items-center gap-2 text-left"
+                  >
+                    {template.pinned ? (
+                      <Pin className="size-3.5 fill-neutral-900 text-neutral-900" strokeWidth={1.75} />
+                    ) : (
+                      <Save className="size-3.5" strokeWidth={1.75} />
+                    )}
+                    <div className="leading-tight">
+                      <div>{template.name}</div>
+                      <div className="text-[10px] opacity-60">{template.description}</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => updateTemplate(template.id, { pinned: !template.pinned })}
+                    className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                    title={template.pinned ? "Unpin template" : "Pin template"}
+                  >
+                    <Pin className={`size-3 ${template.pinned ? "fill-neutral-900 text-neutral-900" : ""}`} />
+                  </button>
+                  <button
+                    onClick={() => startRenameTemplate(template)}
+                    className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                    title="Rename template"
+                  >
+                    <Pencil className="size-3" />
+                  </button>
+                  <button
+                    onClick={() => duplicateTemplate(template)}
+                    className="p-1 text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100"
+                    title="Duplicate template"
+                  >
+                    <Copy className="size-3" />
+                  </button>
+                  <button
+                    onClick={() => deleteTemplate(template.id)}
+                    className="p-1 text-neutral-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
+                    title="Delete template"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>

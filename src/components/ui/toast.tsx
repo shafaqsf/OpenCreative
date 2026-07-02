@@ -1,6 +1,6 @@
 "use client";
 
-import { X, CheckCircle2, AlertCircle, Info, AlertTriangle } from "lucide-react";
+import { X, CheckCircle2, AlertCircle, Info, AlertTriangle, RotateCcw } from "lucide-react";
 import { useToast, type Toast as ToastType } from "@/lib/toast/context";
 
 const variantStyles: Record<ToastType["variant"], string> = {
@@ -17,9 +17,14 @@ const variantIcons: Record<ToastType["variant"], typeof CheckCircle2> = {
   warning: AlertTriangle,
 };
 
+const actionIcons: Record<string, typeof RotateCcw> = {
+  Retry: RotateCcw,
+};
+
 function ToastItem({ toast }: { toast: ToastType }) {
   const { removeToast } = useToast();
   const Icon = variantIcons[toast.variant];
+  const ActionIcon = toast.action ? actionIcons[toast.action.label] ?? null : null;
 
   return (
     <div
@@ -32,6 +37,18 @@ function ToastItem({ toast }: { toast: ToastType }) {
           <p className="text-xs font-semibold">{toast.title}</p>
         )}
         <p className="text-xs leading-relaxed">{toast.message}</p>
+        {toast.action && (
+          <button
+            onClick={() => {
+              toast.action!.onClick();
+              removeToast(toast.id);
+            }}
+            className="mt-1.5 inline-flex items-center gap-1 rounded border border-current px-2 py-0.5 text-xs font-medium hover:opacity-80"
+          >
+            {ActionIcon && <ActionIcon className="size-3" />}
+            {toast.action.label}
+          </button>
+        )}
       </div>
       <button
         onClick={() => removeToast(toast.id)}

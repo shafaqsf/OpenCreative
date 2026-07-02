@@ -1,4 +1,5 @@
 import { uid, newNode } from "./context";
+import { getGenerationModel } from "./generation-models";
 import type { CanvasElement, Connection, NodeType } from "@/types/canvas";
 import { getBounds } from "./hit-test";
 
@@ -54,44 +55,49 @@ function wire(from: CanvasElement, to: CanvasElement): Connection {
 }
 
 function hydrateTemplates(): Template[] {
+  const imageModel = getGenerationModel("google/gemini-3.1-flash-image");
+  const videoModel = getGenerationModel("kwaivgi/kling-v3.0-pro");
   const prompt = buildNode("prompt", 80, 120, {
     content: "A cinematic scene based on the prompt",
   });
-  const generate1 = buildNode("generate", 360, 120);
-  const output1 = buildNode("output", 620, 120, { outputIndex: "0" });
+  const generate1 = buildNode("generate", 360, 120, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+  });
 
   const source = buildNode("source", 80, 320, { fileType: "image" });
   const prompt2 = buildNode("prompt", 80, 500, {
     content: "Animate this image into a video",
   });
-  const generate2 = buildNode("generate", 360, 320);
-  const output2 = buildNode("output", 620, 320, { outputIndex: "0" });
+  const generate2 = buildNode("generate", 360, 320, {
+    model: videoModel.id,
+    outputType: videoModel.outputType,
+  });
 
   const prompt3 = buildNode("prompt", 80, 680, {
     content: "Four creative variations",
   });
   const generate3 = buildNode("generate", 360, 520, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
     count: "4",
   });
-  const outputs3 = [0, 1, 2, 3].map((index) =>
-    buildNode("output", 620, 430 + index * 120, { outputIndex: String(index) })
-  );
 
   return [
     {
       ...BUILTIN_TEMPLATES[0],
-      elements: [prompt, generate1, output1],
-      connections: [wire(prompt, generate1), wire(generate1, output1)],
+      elements: [prompt, generate1],
+      connections: [wire(prompt, generate1)],
     },
     {
       ...BUILTIN_TEMPLATES[1],
-      elements: [source, prompt2, generate2, output2],
-      connections: [wire(source, generate2), wire(prompt2, generate2), wire(generate2, output2)],
+      elements: [source, prompt2, generate2],
+      connections: [wire(source, generate2), wire(prompt2, generate2)],
     },
     {
       ...BUILTIN_TEMPLATES[2],
-      elements: [prompt3, generate3, ...outputs3],
-      connections: [wire(prompt3, generate3), ...outputs3.map((output) => wire(generate3, output))],
+      elements: [prompt3, generate3],
+      connections: [wire(prompt3, generate3)],
     },
   ];
 }

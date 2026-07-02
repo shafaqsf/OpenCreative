@@ -23,18 +23,21 @@ import {
   FileText,
   Image as ImageIcon,
   Sparkles,
-  Monitor,
   RotateCcw,
   Redo,
+  Undo,
   Trash2,
   Copy,
   ZoomIn,
   Maximize,
   Grid3X3,
   Magnet,
+  Save,
+  Bell,
+  BellOff,
 } from "lucide-react";
-import { CanvasProvider, useCanvas, newNode } from "@/lib/canvas/context";
-import { updateProjectWorkflow } from "@/lib/projects/service";
+import { CanvasProvider, useCanvas } from "@/lib/canvas/context";
+import { saveGeneratedMedia, updateProjectWorkflow } from "@/lib/projects/client-service";
 import { useToast } from "@/lib/toast/context";
 import { Canvas } from "@/components/canvas/canvas";
 import { ZoomControls } from "@/components/canvas/zoom-controls";
@@ -45,58 +48,141 @@ import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
+import { getGenerationModel, normalizeOutputCount } from "@/lib/canvas/generation-models";
+import {
+  collectGenerateInput,
+  getNode,
+  prepareWorkflowRun,
+} from "@/lib/canvas/workflow-engine";
 import { useKeyboardShortcuts } from "@/lib/canvas/use-keyboard-shortcuts";
 import { useRegisterCommands } from "@/lib/command-palette/context";
 import type { Project } from "@/lib/projects/service";
-import type { WorkflowState } from "@/types/canvas";
+import type { NodeStatus, WorkflowState } from "@/types/canvas";
 
 export function ProjectCanvasEditor({ project }: { project: Project }) {
-  const [saving, setSaving] = useState(false);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { addToast } = useToast();
+  const [saveStatus, setSaveStatus] = useState<"saved" | "pending" | "saving" | "error">("saved");
+  const [autoSave, setAutoSave] = useState(true);
+  const autoSaveRef = useRef(autoSave);
+  autoSaveRef.current = autoSave;
+  const latestStateRef = useRef<WorkflowState | null>(null);
+  const saveStateRef = useRef<"idle" | "scheduled" | "saving">("idle");
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedStateRef = useRef(JSON.stringify(project.workflow));
+  const pendingAfterSaveRef = useRef(false);
+
+  const scheduleSave = useCallback(() => {
+    if (saveStateRef.current === "saving") {
+      pendingAfterSaveRef.current = true;
+      setSaveStatus("pending");
+      return;
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveStateRef.current = "scheduled";
+    setSaveStatus("pending");
+    saveTimerRef.current = setTimeout(async () => {
+      const state = latestStateRef.current;
+      if (!state || !autoSaveRef.current) {
+        saveStateRef.current = "idle";
+        return;
+      }
+      const serialized = JSON.stringify(state);
+      if (serialized === lastSavedStateRef.current) {
+        saveStateRef.current = "idle";
+        setSaveStatus("saved");
+        return;
+      }
+      saveStateRef.current = "saving";
+      pendingAfterSaveRef.current = false;
+      setSaveStatus("saving");
+      const stateAtStart = latestStateRef.current;
+      try {
+        await updateProjectWorkflow(project.id, state);
+        lastSavedStateRef.current = serialized;
+        setSaveStatus("saved");
+      } catch {
+        setSaveStatus("error");
+      } finally {
+        saveStateRef.current = "idle";
+        if (pendingAfterSaveRef.current || latestStateRef.current !== stateAtStart) {
+          scheduleSave();
+        }
+      }
+    }, 1000);
+  }, [project.id]);
 
   const handleChange = useCallback(
     (state: WorkflowState) => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(async () => {
-        setSaving(true);
-        try {
-          await updateProjectWorkflow(project.id, state);
-        } catch {
-          addToast({ title: "Save failed", message: "Could not save project workflow.", variant: "error" });
-        } finally {
-          setSaving(false);
-        }
-      }, 600);
+      latestStateRef.current = state;
+      const serialized = JSON.stringify(state);
+      if (serialized === lastSavedStateRef.current) {
+        setSaveStatus("saved");
+        return;
+      }
+      setSaveStatus("pending");
+      if (!autoSaveRef.current) return;
+      scheduleSave();
     },
-    [project.id, addToast]
+    [scheduleSave]
   );
+
+  const manualSave = useCallback(async () => {
+    if (!latestStateRef.current) return;
+    if (saveStateRef.current === "saving") {
+      setSaveStatus("saving");
+      return;
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveStateRef.current = "saving";
+    setSaveStatus("saving");
+    const serialized = JSON.stringify(latestStateRef.current);
+    try {
+      await updateProjectWorkflow(project.id, latestStateRef.current);
+      lastSavedStateRef.current = serialized;
+      setSaveStatus("saved");
+    } catch {
+      setSaveStatus("error");
+    } finally {
+      saveStateRef.current = "idle";
+    }
+  }, [project.id]);
 
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
 
   return (
     <CanvasProvider initial={project.workflow} onChange={handleChange}>
-      <ProjectCanvasInner project={project} saving={saving} />
+      <ProjectCanvasInner
+        project={project}
+        saveStatus={saveStatus}
+        autoSave={autoSave}
+        onToggleAutoSave={setAutoSave}
+        onManualSave={manualSave}
+      />
     </CanvasProvider>
   );
 }
 
 function ProjectCanvasInner({
   project,
-  saving,
+  saveStatus,
+  autoSave,
+  onToggleAutoSave,
+  onManualSave,
 }: {
   project: Project;
-  saving: boolean;
+  saveStatus: "saved" | "pending" | "saving" | "error";
+  autoSave: boolean;
+  onToggleAutoSave: (value: boolean) => void;
+  onManualSave: () => void;
 }) {
   const {
     elements,
     connections,
-    updateNodeStatus,
-    addElements,
+    replaceWorkflowGraph,
+    commitWorkflowGraph,
     removeElements,
     selectedIds,
     setActiveTool,
@@ -111,170 +197,239 @@ function ProjectCanvasInner({
     alignSelection,
     distributeSelection,
     setRunWorkflow,
+    updateNodeStatus,
   } = useCanvas();
   const { addToast } = useToast();
   const [running, setRunning] = useState(false);
+  const [queueCount, setQueueCount] = useState(0);
+  const runningRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const queueRef = useRef(0);
   const leftPanel = useResizablePanel("left", 224, { min: 180, max: 360 });
   const rightPanel = useResizablePanel("right", 256, { min: 200, max: 400 });
 
   useKeyboardShortcuts();
 
-  const handleRun = useCallback(async () => {
-    if (running) return;
-    setRunning(true);
-
-    let nowElements = [...elements];
-    let nowConnections = [...connections];
-    const outputElements: typeof elements = [];
-    const outputConnections: typeof connections = [];
-
-    for (const gen of nowElements) {
-      if (gen.type !== "generate" || !gen.nodeData) continue;
-      const count = Math.max(1, parseInt(gen.nodeData.properties.count || "1", 10));
-      const existingOut: string[] = [];
-
-      let outConn = nowConnections.filter((c) => c.fromId === gen.id);
-      for (const c of outConn) {
-        const t = nowElements.find((e) => e.id === c.toId);
-        if (t?.type === "output") existingOut.push(c.toId);
-      }
-
-      if (existingOut.length > count) {
-        const toRemove = existingOut.slice(count);
-        removeElements(toRemove);
-        nowElements = nowElements.filter((el) => !toRemove.includes(el.id));
-        nowConnections = nowConnections.filter(
-          (conn) => !toRemove.includes(conn.fromId) && !toRemove.includes(conn.toId)
-        );
-      } else if (existingOut.length < count) {
-        const genBounds = { x: gen.x, y: gen.y, w: gen.width, h: gen.height };
-        for (let i = existingOut.length; i < count; i++) {
-          const outX = genBounds.x + genBounds.w + 60;
-          const outY = genBounds.y + i * 80;
-          const outEl = newNode("output", outX, outY);
-          outEl.nodeData!.properties.outputIndex = String(i);
-          const outConnection = { id: `run-${outEl.id}`, fromId: gen.id, toId: outEl.id };
-          outputElements.push(outEl);
-          outputConnections.push(outConnection);
-          nowElements.push(outEl);
-          nowConnections.push(outConnection);
-        }
+  const cancelRun = useCallback(() => {
+    cancelledRef.current = true;
+    queueRef.current = 0;
+    setQueueCount(0);
+    for (const el of elements) {
+      if (el.nodeData && (el.nodeData.status === "running" || el.nodeData.status === "idle")) {
+        updateNodeStatus(el.id, "idle");
       }
     }
+    setRunning(false);
+    runningRef.current = false;
+    addToast({ title: "Workflow cancelled", message: "Generation stopped.", variant: "info" });
+  }, [elements, updateNodeStatus, addToast]);
 
-    addElements(outputElements, outputConnections);
+  const handleRunRef = useRef<() => void>(() => {});
+  const processQueueRef = useRef<() => void>(() => {});
+  const processQueue = useCallback(() => {
+    if (queueRef.current > 0) {
+      queueRef.current--;
+      setQueueCount(queueRef.current);
+      handleRunRef.current();
+    }
+  }, []);
+  processQueueRef.current = processQueue;
 
-    const getInputs = (nodeId: string) =>
-      nowConnections.filter((c) => c.toId === nodeId).map((c) => c.fromId);
+  const handleRun = useCallback(async () => {
+    if (runningRef.current) {
+      queueRef.current++;
+      setQueueCount(queueRef.current);
+      addToast({ title: "Workflow queued", message: "Added to queue — waiting for current run to finish.", variant: "info" });
+      return;
+    }
 
-    const getOutputs = (nodeId: string) =>
-      nowConnections.filter((c) => c.fromId === nodeId).map((c) => c.toId);
-
-    const getNode = (id: string) => nowElements.find((el) => el.id === id);
+    runningRef.current = true;
+    setRunning(true);
+    cancelledRef.current = false;
 
     let anyError = false;
-    try {
-      const graph = nowElements.filter((el) => el.nodeData);
-      const done = new Set<string>();
-      const queue: string[] = [];
+    let anySaveError = false;
 
-      const enqueueIfReady = (nodeId: string) => {
-        const inputs = getInputs(nodeId);
-        if (inputs.every((i) => done.has(i)) && !done.has(nodeId)) {
-          queue.push(nodeId);
+    try {
+      const prepared = prepareWorkflowRun(elements, connections);
+      if (prepared.issues.length > 0) {
+        addToast({
+          title: "Workflow cannot run",
+          message: prepared.issues[0],
+          variant: "error",
+        });
+        return;
+      }
+
+      let workingElements = prepared.elements;
+      const workingConnections = prepared.connections;
+
+      const setNodeState = (
+        id: string,
+        patch: {
+          status?: NodeStatus;
+          outputUrl?: string;
+          outputUrls?: string[];
+          error?: string;
         }
+      ) => {
+        workingElements = workingElements.map((element) => {
+          if (element.id !== id || !element.nodeData) return element;
+          return {
+            ...element,
+            nodeData: {
+              ...element.nodeData,
+              ...patch,
+              properties: { ...element.nodeData.properties },
+            },
+          };
+        });
       };
 
-      for (const n of graph) {
-        const inputs = getInputs(n.id);
-        if (inputs.length === 0) {
-          done.add(n.id);
-          const nd = n.nodeData!;
-          if (!nd.outputUrl) {
-            updateNodeStatus(n.id, "done", nd.properties.url || nd.properties.content);
-          }
+      const flushRunState = () => {
+        replaceWorkflowGraph(workingElements, workingConnections);
+      };
+
+      if (prepared.addedElements.length > 0 || prepared.addedConnections.length > 0) {
+        commitWorkflowGraph(workingElements, workingConnections);
+      } else {
+        flushRunState();
+      }
+
+      if (prepared.generateIds.length === 0) {
+        addToast({
+          title: "No generate nodes",
+          message: "Add a generate node and connect a prompt or source to run a workflow.",
+          variant: "info",
+        });
+        return;
+      }
+
+      for (const generateId of prepared.generateIds) {
+        if (cancelledRef.current) break;
+
+        const generateNode = getNode(workingElements, generateId);
+        if (!generateNode) continue;
+
+        const selectedModel = getGenerationModel(generateNode.nodeData.properties.model);
+        const count = normalizeOutputCount(generateNode.nodeData.properties.count, selectedModel.id);
+        const outputIds = prepared.freshOutputIds[generateId] ?? [];
+        const input = collectGenerateInput(workingElements, workingConnections, generateId);
+
+        if (!input.prompt && !input.mediaUrl) {
+          const message = "Connect at least one prompt or source before running this generate node.";
+          setNodeState(generateId, { status: "error", error: message });
+          outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
+          flushRunState();
+          anyError = true;
+          continue;
         }
-      }
 
-      for (const n of graph) {
-        if (!done.has(n.id)) enqueueIfReady(n.id);
-      }
+        setNodeState(generateId, { status: "running", error: undefined });
+        outputIds.forEach((id) => setNodeState(id, { status: "running", error: undefined }));
+        flushRunState();
 
-      while (queue.length > 0) {
-        const id = queue.shift()!;
-        if (done.has(id)) continue;
-        const node = getNode(id);
-        if (!node?.nodeData) continue;
+        if (input.mediaUrl && !selectedModel.supportsImageInput) {
+          const message = `The selected model (${selectedModel.label}) does not support image input. Connect a prompt-only workflow or switch to a model that accepts images.`;
+          setNodeState(generateId, { status: "error", error: message });
+          outputIds.forEach((id) => setNodeState(id, { status: "error", error: message }));
+          flushRunState();
+          anyError = true;
+          continue;
+        }
 
-        if (node.type === "generate") {
-          updateNodeStatus(id, "running");
-          const inputIds = getInputs(id);
-          const sourceUrl = inputIds
-            .map((i) => getNode(i)?.nodeData?.outputUrl)
-            .find(Boolean);
-          const inputPrompt = inputIds
-            .map((i) => getNode(i)?.nodeData)
-            .filter((node) => node?.nodeType === "prompt")
-            .map((node) => node?.properties.content)
-            .filter(Boolean)
-            .join("\n");
-          const prompt = inputPrompt.trim();
-          const count = parseInt(node.nodeData.properties.count || "1", 10);
-          const allUrls: string[] = [];
-          let lastError: string | undefined;
-
-          for (let i = 0; i < count; i++) {
+        const results = await Promise.all(
+          Array.from({ length: count }, async (_, index) => {
+            if (cancelledRef.current) return { index, result: { error: "Cancelled" } };
             const result = await runGeneration({
-              prompt,
-              model: node.nodeData.properties.model || "kwaivgi/kling-v3.0-pro",
-              imageUrl: sourceUrl?.startsWith("http") ? sourceUrl : undefined,
+              prompt: input.prompt,
+              model: selectedModel.id,
+              outputType: selectedModel.outputType,
+              imageUrl: input.mediaUrl,
+              duration: generateNode.nodeData.properties.duration,
             });
-            if (result.url) {
-              allUrls.push(result.url);
-            } else {
-              lastError = result.error || "Generation failed";
-              anyError = true;
-              break;
+            return { index, result };
+          })
+        );
+
+        if (cancelledRef.current) {
+          setNodeState(generateId, { status: "idle" });
+          outputIds.forEach((id) => setNodeState(id, { status: "idle" }));
+          flushRunState();
+          break;
+        }
+
+        const allUrls: string[] = [];
+        let lastError: string | undefined;
+
+        for (const { index, result } of results) {
+          const outputId = outputIds[index];
+          if (result.url) {
+            allUrls[index] = result.url;
+            if (outputId) {
+              setNodeState(outputId, {
+                status: "done",
+                outputUrl: result.url,
+                outputUrls: [result.url],
+                error: undefined,
+              });
             }
-          }
-
-          if (allUrls.length > 0) {
-            updateNodeStatus(id, "done", allUrls[0], undefined, allUrls);
           } else {
-            updateNodeStatus(id, "error", undefined, lastError || "Generation failed");
-          }
-        } else if (node.type === "output") {
-          const inputIds = getInputs(id);
-          const genNode = inputIds.length > 0 ? getNode(inputIds[0]) : null;
-          const genUrls = genNode?.nodeData?.outputUrls;
-          const index = parseInt(node.nodeData.properties.outputIndex || "0", 10);
-
-          if (genUrls && genUrls.length > index) {
-            updateNodeStatus(id, "done", genUrls[index]);
-          } else {
-            updateNodeStatus(id, "error", undefined, "No output at this index");
+            lastError = result.error || "Generation failed";
             anyError = true;
-          }
-        } else {
-          updateNodeStatus(id, "done", node.nodeData.outputUrl);
-        }
-
-        done.add(id);
-
-        const outs = getOutputs(id);
-        for (const outId of outs) {
-          if (!done.has(outId)) {
-            const inputs = getInputs(outId);
-            if (inputs.every((i) => done.has(i))) {
-              queue.push(outId);
+            if (outputId) {
+              setNodeState(outputId, {
+                status: "error",
+                error: lastError,
+              });
             }
           }
         }
+
+        const successfulResults = allUrls
+          .map((url, index) => (url ? { url, index } : null))
+          .filter((item): item is { url: string; index: number } => Boolean(item));
+        const successfulUrls = successfulResults.map((item) => item.url);
+        if (successfulResults.length > 0) {
+          setNodeState(generateId, {
+            status: "done",
+            outputUrl: successfulUrls[0],
+            outputUrls: successfulUrls,
+            error: undefined,
+          });
+          const saveResults = await Promise.allSettled(
+            successfulResults.map(({ url, index }) =>
+              saveGeneratedMedia({
+                projectId: project.id,
+                nodeId: outputIds[index] ?? generateId,
+                outputIndex: index,
+                mediaType: selectedModel.outputType,
+                url,
+                model: selectedModel.id,
+                prompt: input.prompt,
+                sourceUrl: input.sourceUrl,
+              })
+            )
+          );
+          anySaveError = saveResults.some((result) => result.status === "rejected");
+        } else {
+          setNodeState(generateId, {
+            status: "error",
+            error: lastError || "Generation failed",
+          });
+        }
+        flushRunState();
       }
 
-      if (anyError) {
-        addToast({ title: "Workflow finished", message: "Some nodes encountered errors. Check the output nodes for details.", variant: "warning" });
-      } else if (graph.length > 0) {
+      if (cancelledRef.current) {
+        addToast({ title: "Workflow cancelled", message: "Generation was stopped.", variant: "info" });
+      } else if (anyError && anySaveError) {
+        addToast({ title: "Workflow finished with errors", message: "Some generations or media saves failed.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
+      } else if (anyError) {
+        addToast({ title: "Workflow finished with errors", message: "Generation failed. Select failed nodes for details.", variant: "warning", action: { label: "Retry", onClick: handleRun } });
+      } else if (anySaveError) {
+        addToast({ title: "Workflow complete", message: "Outputs were created, but some gallery saves failed.", variant: "warning" });
+      } else {
         addToast({ title: "Workflow complete", message: "All nodes finished successfully.", variant: "success" });
       }
     } catch (err) {
@@ -284,9 +439,15 @@ function ProjectCanvasInner({
         variant: "error",
       });
     } finally {
+      runningRef.current = false;
       setRunning(false);
+      if (!cancelledRef.current) {
+        processQueueRef.current();
+      }
     }
-  }, [elements, connections, running, addElements, removeElements, updateNodeStatus, addToast]);
+  }, [elements, connections, project.id, replaceWorkflowGraph, commitWorkflowGraph, addToast]);
+
+  handleRunRef.current = handleRun;
 
   const commands = useMemo(
     () => [
@@ -390,13 +551,6 @@ function ProjectCanvasInner({
         section: "Nodes",
         icon: <Sparkles className="size-3.5" />,
         onSelect: () => setActiveTool("generate"),
-      },
-      {
-        id: "node-output",
-        title: "Output node",
-        section: "Nodes",
-        icon: <Monitor className="size-3.5" />,
-        onSelect: () => setActiveTool("output"),
       },
       {
         id: "workflow-run",
@@ -542,13 +696,111 @@ function ProjectCanvasInner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {saving && (
-            <span className="flex items-center gap-1.5 text-xs text-neutral-400">
-              <Loader2 className="size-3 animate-spin" />
-              Saving…
+          <div className="flex items-center gap-0.5 rounded-md border border-neutral-200 bg-white p-0.5">
+            <button
+              onClick={undo}
+              disabled={!canUndo}
+              className="flex size-7 items-center justify-center rounded text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 disabled:text-neutral-300 disabled:hover:bg-transparent"
+              title="Undo"
+              aria-label="Undo"
+            >
+              <Undo className="size-3.5" />
+            </button>
+            <button
+              onClick={redo}
+              disabled={!canRedo}
+              className="flex size-7 items-center justify-center rounded text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 disabled:text-neutral-300 disabled:hover:bg-transparent"
+              title="Redo"
+              aria-label="Redo"
+            >
+              <Redo className="size-3.5" />
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              const next = !autoSave;
+              onToggleAutoSave(next);
+            }}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs ${
+              autoSave ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+            }`}
+            title={
+              autoSave
+                ? "Auto-save is on. Click to disable."
+                : "Auto-save is off. Click to enable."
+            }
+          >
+            {autoSave ? (
+              <Bell className="size-3" />
+            ) : (
+              <BellOff className="size-3" />
+            )}
+            <span>{autoSave ? "Auto" : "Manual"}</span>
+          </button>
+
+          {!autoSave && (
+            <>
+              <button
+                onClick={onManualSave}
+                disabled={saveStatus === "saving" || saveStatus === "saved"}
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-50"
+              >
+                {saveStatus === "saving" ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" />}
+                {saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Retry save" : "Save"}
+              </button>
+              <span
+                className={`text-xs ${
+                  saveStatus === "error"
+                    ? "text-red-600"
+                    : saveStatus === "pending"
+                      ? "text-neutral-500"
+                      : "text-neutral-400"
+                }`}
+              >
+                {saveStatus === "pending" && "Unsaved changes"}
+                {saveStatus === "saved" && "Saved"}
+                {saveStatus === "error" && "Save failed"}
+              </span>
+            </>
+          )}
+
+          {autoSave && (
+            <span
+              className={`flex items-center gap-1.5 text-xs ${
+                saveStatus === "error"
+                  ? "text-red-600"
+                  : saveStatus === "saved"
+                    ? "text-neutral-400"
+                    : "text-neutral-500"
+              }`}
+            >
+              {saveStatus === "saving" && <Loader2 className="size-3 animate-spin" />}
+              {saveStatus === "pending" && "Unsaved changes"}
+              {saveStatus === "saving" && "Saving..."}
+              {saveStatus === "saved" && "Saved"}
+              {saveStatus === "error" && "Save failed"}
             </span>
           )}
-          <OutputGalleryButton />
+
+          {running && (
+            <button
+              onClick={cancelRun}
+              className="flex items-center gap-1.5 rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+              title="Cancel running workflow"
+            >
+              <Square className="size-3" />
+              Stop
+            </button>
+          )}
+
+          {queueCount > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-amber-600">
+              <Loader2 className="size-3 animate-spin" />
+              {queueCount} queued
+            </span>
+          )}
+
+          <OutputGalleryButton projectId={project.id} />
         </div>
       </header>
 

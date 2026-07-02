@@ -11,12 +11,18 @@ import {
 
 export type ToastVariant = "success" | "error" | "info" | "warning";
 
+export type ToastAction = {
+  label: string;
+  onClick: () => void;
+};
+
 export type Toast = {
   id: string;
   title?: string;
   message: string;
   variant: ToastVariant;
   duration?: number;
+  action?: ToastAction;
 };
 
 type ToastContextValue = {
@@ -36,7 +42,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const addToast = useCallback((toast: Omit<Toast, "id">) => {
     const id = uid();
-    const duration = toast.duration ?? 5000;
+    const hasAction = !!toast.action;
+    const duration = toast.duration ?? (hasAction ? 0 : 5000);
     const next = { ...toast, id, duration };
     setToasts((prev) => [...prev, next]);
     if (duration > 0) {

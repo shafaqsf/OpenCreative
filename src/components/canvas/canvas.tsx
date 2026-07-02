@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -14,6 +15,7 @@ import { screenToWorld, worldToScreen } from "@/lib/canvas/geometry";
 import { getElementAtPoint, getBounds } from "@/lib/canvas/hit-test";
 import { getBuiltInTemplates, instantiateTemplateAt, loadCustomTemplates } from "@/lib/canvas/presets";
 import { snapPointToGrid, computeAlignmentSnap, type Guide } from "@/lib/canvas/snap";
+import { canConnectNodes } from "@/lib/canvas/workflow-engine";
 import { useToast } from "@/lib/toast/context";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { Shape } from "./shape";
@@ -378,7 +380,17 @@ export function Canvas() {
     if (drag.kind === "connect") {
       const inputPort = connectEnd ? getNodePortAtPoint(connectEnd, "input") : null;
       if (inputPort && inputPort.id !== drag.fromId) {
-        addConnection(drag.fromId, inputPort.id);
+        const validation = canConnectNodes(elements, connections, drag.fromId, inputPort.id);
+        if (validation.ok) {
+          addConnection(drag.fromId, inputPort.id);
+        } else {
+          addToast({
+            title: "Connection rejected",
+            message: validation.reason ?? "Those nodes cannot be connected.",
+            variant: "warning",
+            duration: 2500,
+          });
+        }
       }
     }
 
@@ -414,7 +426,7 @@ export function Canvas() {
     setMarquee(null);
     setConnectEnd(null);
     setGuides([]);
-  }, [drag, marquee, connectEnd, elements, removeElements, selectElements, addConnection, getNodePortAtPoint]);
+  }, [drag, marquee, connectEnd, elements, connections, removeElements, selectElements, addConnection, getNodePortAtPoint, addToast]);
 
   const onWheel = useCallback(
     (e: ReactWheelEvent<SVGSVGElement>) => {
@@ -530,6 +542,10 @@ export function Canvas() {
       )
     : null;
   const editingBounds = editingEl ? getBounds(editingEl) : null;
+  const elementById = useMemo(
+    () => new Map(elements.map((element) => [element.id, element])),
+    [elements]
+  );
 
   function commitText(value: string) {
     if (!editingTextId) return;
@@ -673,8 +689,8 @@ export function Canvas() {
           }}
         >
           {connections.map((conn) => {
-            const from = elements.find((el) => el.id === conn.fromId);
-            const to = elements.find((el) => el.id === conn.toId);
+            const from = elementById.get(conn.fromId);
+            const to = elementById.get(conn.toId);
             if (!from || !to) return null;
             const fb = getBounds(from);
             const tb = getBounds(to);
