@@ -1,5 +1,7 @@
 "use server";
 
+import { formatProviderErrorForUser } from "@/lib/canvas/generation-errors";
+
 export async function runGeneration(params: {
   prompt: string;
   model: string;
@@ -8,7 +10,10 @@ export async function runGeneration(params: {
   duration?: string;
 }): Promise<{ url?: string; error?: string }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return { error: "OPENROUTER_API_KEY not configured" };
+  if (!apiKey) {
+    console.error("OpenCreative generation is missing OPENROUTER_API_KEY");
+    return { error: "Generation is not configured yet. Add the OpenRouter API key, then retry." };
+  }
 
   const messages: { role: "user"; content: unknown[] } = {
     role: "user",
@@ -49,7 +54,18 @@ export async function runGeneration(params: {
 
     if (!res.ok) {
       const text = await res.text();
-      return { error: `OpenRouter ${res.status}: ${text.slice(0, 200)}` };
+      console.error("OpenCreative generation provider error", {
+        provider: "OpenRouter",
+        status: res.status,
+        response: text,
+      });
+      return {
+        error: formatProviderErrorForUser({
+          provider: "OpenRouter",
+          status: res.status,
+          body: text,
+        }),
+      };
     }
 
     const json = await res.json();
@@ -63,7 +79,7 @@ export async function runGeneration(params: {
         outputType: params.outputType,
         response: json,
       });
-      return { error: "No content in response" };
+      return { error: "The provider returned an empty response. Retry or choose another model." };
     }
 
     const urlMatch = stringifyContent(content).match(MEDIA_URL_RE);
@@ -74,7 +90,7 @@ export async function runGeneration(params: {
       outputType: params.outputType,
       response: json,
     });
-    return { error: "No media URL found in model response" };
+    return { error: "The provider response did not include generated media. Retry or choose another model." };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Request failed";
     console.error("OpenCreative generation request failed", {
@@ -82,7 +98,7 @@ export async function runGeneration(params: {
       outputType: params.outputType,
       error: message,
     });
-    return { error: message };
+    return { error: "Generation could not reach the provider. Check the connection and retry." };
   }
 }
 

@@ -46,6 +46,7 @@ import { OutputGalleryButton } from "@/components/canvas/output-gallery";
 import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
+import { formatGenerationFailureForUser } from "@/lib/canvas/generation-errors";
 import { runGeneration } from "@/lib/canvas/run-workflow";
 import { getGenerationModel } from "@/lib/canvas/generation-models";
 import {
@@ -405,7 +406,7 @@ function ProjectCanvasInner({
               appendOutputResult(outputId, result.url);
             }
           } else {
-            lastError = result.error || "Generation failed";
+            lastError = formatGenerationFailureForUser(result.error || "Generation failed");
             anyGenerationError = true;
             firstGenerationError ??= lastError;
             if (outputId) {
@@ -469,7 +470,7 @@ function ProjectCanvasInner({
     } catch (err) {
       addToast({
         title: "Workflow failed",
-        message: err instanceof Error ? err.message : "An unexpected error occurred.",
+        message: formatGenerationFailureForUser(err),
         variant: "error",
       });
     } finally {
