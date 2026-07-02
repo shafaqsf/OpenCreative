@@ -378,34 +378,35 @@ function WorkflowNode({
                   <span style={{ fontSize: 10, color: "#a3a3a3", textTransform: "capitalize" }}>
                     {generationModel?.outputType}
                   </span>
-                  {generateRunIssue && (
+                  {generateRunIssue ? (
                     <span style={{ fontSize: 9, color: "#dc2626", textAlign: "center", lineHeight: 1.25 }}>
                       {generateRunIssue.includes("output") ? "Connect Output" : "Connect Input"}
                     </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        runWorkflow?.();
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "5px 14px",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: "#fff",
+                        background: "#171717",
+                        border: "none",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        lineHeight: 1,
+                      }}
+                    >
+                      Run
+                    </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      runWorkflow?.();
-                    }}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      padding: "5px 14px",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#fff",
-                      background: "#171717",
-                      border: "none",
-                      borderRadius: 6,
-                      cursor: "pointer",
-                      lineHeight: 1,
-                    }}
-                  >
-                    Run
-                  </button>
                 </>
               ) : nodeType === "output" ? (
                 <span style={{ fontSize: 10, color: "#a3a3a3" }}>Awaiting result</span>
