@@ -20,7 +20,7 @@ import { useToast } from "@/lib/toast/context";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { Shape } from "./shape";
 import { SelectionOverlay } from "./selection-overlay";
-import type { CanvasElement, NodeType, Point, ToolId } from "@/types/canvas";
+import type { CanvasElement, Connection, NodeType, Point, ToolId } from "@/types/canvas";
 import { isNodeTool } from "@/types/canvas";
 
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
@@ -300,9 +300,9 @@ export function Canvas() {
       }
 
       if (isNodeTool(activeTool)) {
-        const el = newNode(activeTool as NodeType, world.x - 90, world.y - 40);
-        addElement(el);
-        selectElements([el.id]);
+        const placement = createNodePlacement(activeTool as NodeType, world.x - 90, world.y - 40);
+        addElements(placement.elements, placement.connections);
+        selectElements(placement.elements.map((el) => el.id));
         return;
       }
 
@@ -310,7 +310,7 @@ export function Canvas() {
       addElement(el);
       setDrag({ kind: "create", start: world, el });
     },
-    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, snapWorld, addElement, toggleSelection, selectElements, clearSelection, getResizeHandleAtPoint, getNodePortAtPoint]
+    [activeTool, elements, selectedIds, camera, getMousePos, getWorldPos, snapWorld, addElement, addElements, toggleSelection, selectElements, clearSelection, getResizeHandleAtPoint, getNodePortAtPoint]
   );
 
   const onPointerMove = useCallback(
@@ -482,9 +482,9 @@ export function Canvas() {
       }
 
       if (isNodeTool(toolId as NodeType)) {
-        const el = newNode(toolId as NodeType, world.x - 90, world.y - 40);
-        addElement(el);
-        selectElements([el.id]);
+        const placement = createNodePlacement(toolId as NodeType, world.x - 90, world.y - 40);
+        addElements(placement.elements, placement.connections);
+        selectElements(placement.elements.map((el) => el.id));
       } else if (toolId === "text") {
         const el = newElement("text", world.x, world.y);
         el.height = 48;
@@ -808,6 +808,26 @@ export function Canvas() {
       />
     </div>
   );
+}
+
+function createNodePlacement(
+  nodeType: NodeType,
+  x: number,
+  y: number
+): { elements: CanvasElement[]; connections: Connection[] } {
+  const node = newNode(nodeType, x, y);
+  if (nodeType !== "generate") return { elements: [node], connections: [] };
+
+  const output = newNode("output", x + Math.max(node.width, 200) + 64, y);
+  output.nodeData!.properties = {
+    ...output.nodeData!.properties,
+    outputType: node.nodeData?.properties.outputType ?? "image",
+  };
+
+  return {
+    elements: [node, output],
+    connections: [{ id: uid(), fromId: node.id, toId: output.id }],
+  };
 }
 
 function getTextEditorFontSize(element: CanvasElement, zoom: number) {

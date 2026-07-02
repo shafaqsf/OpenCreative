@@ -1,4 +1,4 @@
-import { getGenerationModel, normalizeOutputCount } from "./generation-models";
+import { getGenerationModel } from "./generation-models";
 import type { CanvasElement, Connection, NodeType } from "@/types/canvas";
 import { NODE_CONFIG } from "@/types/canvas";
 
@@ -116,12 +116,10 @@ export function prepareWorkflowRun(
     if (!isWorkflowNode(generate) || generate.nodeData.nodeType !== "generate") continue;
 
     const model = getGenerationModel(generate.nodeData.properties.model);
-    const count = normalizeOutputCount(generate.nodeData.properties.count, model.id);
     generate.nodeData.properties = {
       ...generate.nodeData.properties,
       model: model.id,
       outputType: model.outputType,
-      count: String(count),
     };
   }
 
@@ -129,30 +127,17 @@ export function prepareWorkflowRun(
     if (!isWorkflowNode(generate) || generate.nodeData.nodeType !== "generate") continue;
 
     const model = getGenerationModel(generate.nodeData.properties.model);
-    const count = normalizeOutputCount(generate.nodeData.properties.count, model.id);
+    const connectedOutputs = getConnectedOutputIds(nextElements, nextConnections, generate.id);
 
-    const staleOutputIds = nextConnections
-      .filter((conn) => conn.fromId === generate.id &&
-        nextElements.some((el) => el.id === conn.toId && isWorkflowNode(el) && el.nodeData.nodeType === "output"))
-      .map((conn) => conn.toId);
-    const staleOutputSet = new Set(staleOutputIds);
-
-    if (staleOutputIds.length > 0) {
-      const remaining = nextElements.filter((el) => !staleOutputSet.has(el.id));
-      nextElements.splice(0, nextElements.length, ...remaining);
-      const remainingConns = nextConnections.filter((conn) => !staleOutputSet.has(conn.toId));
-      nextConnections.splice(0, nextConnections.length, ...remainingConns);
-    }
-
-    const fresh: string[] = [];
-    for (let index = 0; index < count; index++) {
+    if (connectedOutputs.length === 0) {
       const created = createNode(
         "output",
         generate.x + Math.max(generate.width, 200) + 64,
-        generate.y + index * 120
+        generate.y
       );
       created.nodeData!.properties = {
         ...created.nodeData!.properties,
+        outputIndex: "0",
         outputType: model.outputType,
       };
       const conn = { id: uid(), fromId: generate.id, toId: created.id };
@@ -160,9 +145,27 @@ export function prepareWorkflowRun(
       nextConnections.push(conn);
       addedElements.push(created);
       addedConnections.push(conn);
-      fresh.push(created.id);
+      connectedOutputs.push(created.id);
     }
-    freshOutputIds[generate.id] = fresh;
+
+    connectedOutputs.forEach((outputId, index) => {
+      const output = nextElements.find((element) => element.id === outputId);
+      if (!isWorkflowNode(output)) return;
+      output.nodeData = {
+        ...output.nodeData,
+        status: "idle",
+        outputUrl: undefined,
+        outputUrls: undefined,
+        error: undefined,
+        properties: {
+          ...output.nodeData.properties,
+          outputIndex: String(index),
+          outputType: model.outputType,
+        },
+      };
+    });
+
+    freshOutputIds[generate.id] = connectedOutputs;
   }
 
   const generateIds = sortGenerateNodes(nextElements, nextConnections, issues);

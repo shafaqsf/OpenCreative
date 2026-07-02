@@ -33,7 +33,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
   {
     id: "multi-variation",
     name: "Multi-variation",
-    description: "Prompt → Generate → 4 outputs",
+    description: "Prompt → Generate → Output",
     elements: [],
     connections: [],
   },
@@ -75,7 +75,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
   {
     id: "batch-premium",
     name: "Batch premium",
-    description: "Prompt → Generate 4x (premium model)",
+    description: "Prompt → Generate premium → Output",
     elements: [],
     connections: [],
   },
@@ -89,7 +89,7 @@ export const BUILTIN_TEMPLATES: Template[] = [
   {
     id: "video-batch",
     name: "Video batch",
-    description: "Source + Prompt → Generate video (4x)",
+    description: "Source + Prompt → Generate video → Output",
     elements: [],
     connections: [],
   },
@@ -140,7 +140,6 @@ function hydrateTemplates(): Template[] {
   const generate3 = buildNode("generate", 360, 520, {
     model: imageModel.id,
     outputType: imageModel.outputType,
-    count: "4",
   });
 
   // --- New templates ---
@@ -207,7 +206,6 @@ function hydrateTemplates(): Template[] {
   const bpGenerate = buildNode("generate", 360, 2680, {
     model: premiumModel.id,
     outputType: premiumModel.outputType,
-    count: "4",
   });
 
   // 10. Style Transfer
@@ -228,7 +226,6 @@ function hydrateTemplates(): Template[] {
   const vbGenerate = buildNode("generate", 360, 3580, {
     model: videoModel.id,
     outputType: videoModel.outputType,
-    count: "4",
   });
 
   return [
@@ -291,7 +288,7 @@ function hydrateTemplates(): Template[] {
       elements: [vbSource, vbPrompt, vbGenerate],
       connections: [wire(vbSource, vbGenerate), wire(vbPrompt, vbGenerate)],
     },
-  ];
+  ].map(addMissingGenerateOutputs);
 }
 
 export function getBuiltInTemplates(): Template[] {
@@ -406,6 +403,34 @@ function cloneElement(
         }
       : undefined,
   };
+}
+
+function addMissingGenerateOutputs(template: Template): Template {
+  const elements = [...template.elements];
+  const connections = [...template.connections];
+
+  for (const generate of template.elements) {
+    if (generate.type !== "generate" || !generate.nodeData) continue;
+    const hasOutput = connections.some((connection) => {
+      if (connection.fromId !== generate.id) return false;
+      return elements.some((element) => element.id === connection.toId && element.type === "output");
+    });
+    if (hasOutput) continue;
+
+    const output = buildNode(
+      "output",
+      generate.x + Math.max(generate.width, 200) + 64,
+      generate.y,
+      {
+        outputIndex: "0",
+        outputType: generate.nodeData.properties.outputType ?? "image",
+      }
+    );
+    elements.push(output);
+    connections.push(wire(generate, output));
+  }
+
+  return { ...template, elements, connections };
 }
 
 function getTemplateBounds(template: Template) {

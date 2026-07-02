@@ -48,7 +48,7 @@ import { PropertiesPanel } from "@/components/canvas/properties-panel";
 import { AIPanel } from "@/components/dashboard/panels/ai-panel";
 import { ToolsPanel } from "@/components/dashboard/panels/tools-panel";
 import { runGeneration } from "@/lib/canvas/run-workflow";
-import { getGenerationModel, normalizeOutputCount } from "@/lib/canvas/generation-models";
+import { getGenerationModel } from "@/lib/canvas/generation-models";
 import {
   collectGenerateInput,
   getNode,
@@ -312,8 +312,8 @@ function ProjectCanvasInner({
         if (!generateNode) continue;
 
         const selectedModel = getGenerationModel(generateNode.nodeData.properties.model);
-        const count = normalizeOutputCount(generateNode.nodeData.properties.count, selectedModel.id);
         const outputIds = prepared.freshOutputIds[generateId] ?? [];
+        const count = Math.max(outputIds.length, 1);
         const input = collectGenerateInput(workingElements, workingConnections, generateId);
 
         if (!input.prompt && !input.mediaUrl) {

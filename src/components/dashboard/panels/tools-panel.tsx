@@ -62,6 +62,7 @@ const nodes: { id: ToolId; label: string; Icon: LucideIcon; desc: string }[] = [
   { id: "prompt", label: "Prompt", Icon: FileText, desc: "Text prompt or instruction" },
   { id: "source", label: "Source", Icon: Image, desc: "Image/video URL or upload" },
   { id: "generate", label: "Generate", Icon: Sparkles, desc: "AI generation step" },
+  { id: "output", label: "Output", Icon: Image, desc: "Generated result target" },
 ];
 
 export function ToolsPanel() {

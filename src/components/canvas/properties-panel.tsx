@@ -5,7 +5,6 @@ import { useCanvas } from "@/lib/canvas/context";
 import {
   GENERATION_MODELS,
   getGenerationModel,
-  normalizeOutputCount,
 } from "@/lib/canvas/generation-models";
 
 const NODE_CONFIG: Record<
@@ -44,7 +43,6 @@ const NODE_CONFIG: Record<
         })),
       },
       { key: "duration", label: "Duration (s)", type: "number_min0" },
-      { key: "count", label: "Outputs", type: "number_min1" },
     ],
   },
   output: {
@@ -111,19 +109,9 @@ export function PropertiesPanel() {
         ...nd.properties,
         model: nextModel.id,
         outputType: nextModel.outputType,
-        count: String(normalizeOutputCount(nd.properties.count, nextModel.id)),
       };
       updateNodeProperties(el.id, properties);
       syncConnectedOutputTypes(properties);
-      return;
-    }
-
-    if (nd.nodeType === "generate" && key === "count") {
-      const properties = {
-        ...nd.properties,
-        count: String(normalizeOutputCount(value, nd.properties.model)),
-      };
-      updateNodeProperties(el.id, properties);
       return;
     }
 
@@ -247,7 +235,6 @@ export function PropertiesPanel() {
                 <input
                   type="number"
                   min={field.type === "number_min0" ? "0" : field.type === "number_min1" ? "1" : undefined}
-                  max={field.key === "count" && generationModel ? generationModel.maxOutputs : undefined}
                   value={nd.properties[field.key] ?? ""}
                   onChange={(e) => setField(field.key, e.target.value)}
                   className={inputCls}

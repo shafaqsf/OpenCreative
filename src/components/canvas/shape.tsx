@@ -370,7 +370,7 @@ function WorkflowNode({
                     {generationModel?.label}
                   </span>
                   <span style={{ fontSize: 10, color: "#a3a3a3", textTransform: "capitalize" }}>
-                    {generationModel?.outputType} x{nodeData.properties.count || "1"}
+                    {generationModel?.outputType}
                   </span>
                   <button
                     type="button"
