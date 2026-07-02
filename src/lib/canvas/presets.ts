@@ -37,6 +37,62 @@ export const BUILTIN_TEMPLATES: Template[] = [
     elements: [],
     connections: [],
   },
+  {
+    id: "text-to-video",
+    name: "Text to video",
+    description: "Prompt → Generate video → Output",
+    elements: [],
+    connections: [],
+  },
+  {
+    id: "image-to-image",
+    name: "Image to image",
+    description: "Source + Prompt → Generate image → Output",
+    elements: [],
+    connections: [],
+  },
+  {
+    id: "dual-model",
+    name: "Dual model",
+    description: "Prompt → 2 models → side-by-side outputs",
+    elements: [],
+    connections: [],
+  },
+  {
+    id: "animate-still",
+    name: "Animate still",
+    description: "Source → Generate video → Output",
+    elements: [],
+    connections: [],
+  },
+  {
+    id: "prompt-chain",
+    name: "Prompt chain",
+    description: "Generate → Refine prompt → Generate again",
+    elements: [],
+    connections: [],
+  },
+  {
+    id: "batch-premium",
+    name: "Batch premium",
+    description: "Prompt → Generate 4x (premium model)",
+    elements: [],
+    connections: [],
+  },
+  {
+    id: "style-transfer",
+    name: "Style transfer",
+    description: "Source + Style prompt → Generate → Output",
+    elements: [],
+    connections: [],
+  },
+  {
+    id: "video-batch",
+    name: "Video batch",
+    description: "Source + Prompt → Generate video (4x)",
+    elements: [],
+    connections: [],
+  },
 ];
 
 function buildNode(
@@ -57,6 +113,10 @@ function wire(from: CanvasElement, to: CanvasElement): Connection {
 function hydrateTemplates(): Template[] {
   const imageModel = getGenerationModel("google/gemini-3.1-flash-image");
   const videoModel = getGenerationModel("kwaivgi/kling-v3.0-pro");
+  const premiumModel = getGenerationModel("google/gemini-3-pro-image");
+
+  // --- Existing templates ---
+
   const prompt = buildNode("prompt", 80, 120, {
     content: "A cinematic scene based on the prompt",
   });
@@ -83,6 +143,94 @@ function hydrateTemplates(): Template[] {
     count: "4",
   });
 
+  // --- New templates ---
+
+  // 4. Text to Video
+  const ttvPrompt = buildNode("prompt", 80, 920, {
+    content: "A cinematic drone shot of a futuristic city at sunset with neon lights",
+  });
+  const ttvGenerate = buildNode("generate", 360, 900, {
+    model: videoModel.id,
+    outputType: videoModel.outputType,
+  });
+
+  // 5. Image to Image
+  const itiSource = buildNode("source", 80, 1180, { fileType: "image" });
+  const itiPrompt = buildNode("prompt", 80, 1340, {
+    content: "Transform this into a watercolor painting with soft edges",
+  });
+  const itiGenerate = buildNode("generate", 360, 1240, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+  });
+
+  // 6. Dual Model
+  const dmPrompt = buildNode("prompt", 80, 1680, {
+    content: "A majestic lion in the savannah at golden hour",
+  });
+  const dmGenerate1 = buildNode("generate", 360, 1620, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+  });
+  const dmGenerate2 = buildNode("generate", 640, 1620, {
+    model: premiumModel.id,
+    outputType: premiumModel.outputType,
+  });
+
+  // 7. Animate Still
+  const asSource = buildNode("source", 80, 2020, { fileType: "image" });
+  const asGenerate = buildNode("generate", 360, 2000, {
+    model: videoModel.id,
+    outputType: videoModel.outputType,
+  });
+
+  // 8. Prompt Chain
+  const pcPrompt1 = buildNode("prompt", 80, 2320, {
+    content: "A fantasy landscape with floating islands and waterfalls",
+  });
+  const pcGenerate1 = buildNode("generate", 360, 2300, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+  });
+  const pcPrompt2 = buildNode("prompt", 640, 2300, {
+    content: "Make it more vibrant, add dramatic god rays and glowing crystals",
+  });
+  const pcGenerate2 = buildNode("generate", 920, 2300, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+  });
+
+  // 9. Batch Premium
+  const bpPrompt = buildNode("prompt", 80, 2700, {
+    content: "High-end product photography of a luxury mechanical watch",
+  });
+  const bpGenerate = buildNode("generate", 360, 2680, {
+    model: premiumModel.id,
+    outputType: premiumModel.outputType,
+    count: "4",
+  });
+
+  // 10. Style Transfer
+  const stSource = buildNode("source", 80, 3060, { fileType: "image" });
+  const stPrompt = buildNode("prompt", 80, 3220, {
+    content: "Apply a cyberpunk neon style with magenta, cyan and deep purple tones",
+  });
+  const stGenerate = buildNode("generate", 360, 3120, {
+    model: imageModel.id,
+    outputType: imageModel.outputType,
+  });
+
+  // 11. Video Batch
+  const vbSource = buildNode("source", 80, 3520, { fileType: "image" });
+  const vbPrompt = buildNode("prompt", 80, 3700, {
+    content: "Create dramatic cinematic motion from this image with slow zooms and pans",
+  });
+  const vbGenerate = buildNode("generate", 360, 3580, {
+    model: videoModel.id,
+    outputType: videoModel.outputType,
+    count: "4",
+  });
+
   return [
     {
       ...BUILTIN_TEMPLATES[0],
@@ -98,6 +246,50 @@ function hydrateTemplates(): Template[] {
       ...BUILTIN_TEMPLATES[2],
       elements: [prompt3, generate3],
       connections: [wire(prompt3, generate3)],
+    },
+    {
+      ...BUILTIN_TEMPLATES[3],
+      elements: [ttvPrompt, ttvGenerate],
+      connections: [wire(ttvPrompt, ttvGenerate)],
+    },
+    {
+      ...BUILTIN_TEMPLATES[4],
+      elements: [itiSource, itiPrompt, itiGenerate],
+      connections: [wire(itiSource, itiGenerate), wire(itiPrompt, itiGenerate)],
+    },
+    {
+      ...BUILTIN_TEMPLATES[5],
+      elements: [dmPrompt, dmGenerate1, dmGenerate2],
+      connections: [wire(dmPrompt, dmGenerate1), wire(dmPrompt, dmGenerate2)],
+    },
+    {
+      ...BUILTIN_TEMPLATES[6],
+      elements: [asSource, asGenerate],
+      connections: [wire(asSource, asGenerate)],
+    },
+    {
+      ...BUILTIN_TEMPLATES[7],
+      elements: [pcPrompt1, pcGenerate1, pcPrompt2, pcGenerate2],
+      connections: [
+        wire(pcPrompt1, pcGenerate1),
+        wire(pcGenerate1, pcPrompt2),
+        wire(pcPrompt2, pcGenerate2),
+      ],
+    },
+    {
+      ...BUILTIN_TEMPLATES[8],
+      elements: [bpPrompt, bpGenerate],
+      connections: [wire(bpPrompt, bpGenerate)],
+    },
+    {
+      ...BUILTIN_TEMPLATES[9],
+      elements: [stSource, stPrompt, stGenerate],
+      connections: [wire(stSource, stGenerate), wire(stPrompt, stGenerate)],
+    },
+    {
+      ...BUILTIN_TEMPLATES[10],
+      elements: [vbSource, vbPrompt, vbGenerate],
+      connections: [wire(vbSource, vbGenerate), wire(vbPrompt, vbGenerate)],
     },
   ];
 }
