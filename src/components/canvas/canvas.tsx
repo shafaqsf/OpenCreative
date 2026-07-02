@@ -15,7 +15,7 @@ import { screenToWorld, worldToScreen } from "@/lib/canvas/geometry";
 import { getElementAtPoint, getBounds } from "@/lib/canvas/hit-test";
 import { getBuiltInTemplates, instantiateTemplateAt, loadCustomTemplates } from "@/lib/canvas/presets";
 import { snapPointToGrid, computeAlignmentSnap, type Guide } from "@/lib/canvas/snap";
-import { canConnectNodes } from "@/lib/canvas/workflow-engine";
+import { canConnectNodes, normalizeConnectionDirection } from "@/lib/canvas/workflow-engine";
 import { useToast } from "@/lib/toast/context";
 import { ContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { Shape } from "./shape";
@@ -380,9 +380,15 @@ export function Canvas() {
     if (drag.kind === "connect") {
       const inputPort = connectEnd ? getNodePortAtPoint(connectEnd, "input") : null;
       if (inputPort && inputPort.id !== drag.fromId) {
-        const validation = canConnectNodes(elements, connections, drag.fromId, inputPort.id);
+        const normalized = normalizeConnectionDirection(elements, drag.fromId, inputPort.id);
+        const validation = canConnectNodes(
+          elements,
+          connections,
+          normalized.fromId,
+          normalized.toId
+        );
         if (validation.ok) {
-          addConnection(drag.fromId, inputPort.id);
+          addConnection(normalized.fromId, normalized.toId);
         } else {
           addToast({
             title: "Connection rejected",

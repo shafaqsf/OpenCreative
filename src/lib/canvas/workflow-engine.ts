@@ -66,6 +66,31 @@ export function canConnectNodes(
   return { ok: true };
 }
 
+export function normalizeConnectionDirection(
+  elements: CanvasElement[],
+  fromId: string,
+  toId: string
+): { fromId: string; toId: string } {
+  const from = elements.find((element) => element.id === fromId);
+  const to = elements.find((element) => element.id === toId);
+
+  if (
+    isWorkflowNode(from) &&
+    isWorkflowNode(to) &&
+    from.nodeData.nodeType === "output" &&
+    to.nodeData.nodeType === "generate" &&
+    !hasOutputMedia(from)
+  ) {
+    return { fromId: to.id, toId: from.id };
+  }
+
+  return { fromId, toId };
+}
+
+function hasOutputMedia(element: WorkflowNodeElement) {
+  return Boolean(element.nodeData.outputUrl || element.nodeData.outputUrls?.length);
+}
+
 export function prepareWorkflowRun(
   elements: CanvasElement[],
   connections: Connection[]
@@ -126,6 +151,7 @@ export function prepareWorkflowRun(
     if (!isWorkflowNode(generate) || generate.nodeData.nodeType !== "generate") continue;
 
     const model = getGenerationModel(generate.nodeData.properties.model);
+    normalizeEmptyOutputTargetConnections(nextElements, nextConnections, generate.id);
     const connectedOutputs = getConnectedOutputIds(nextElements, nextConnections, generate.id);
 
     connectedOutputs.forEach((outputId, index) => {
@@ -216,7 +242,7 @@ export function getConnectedOutputIds(
   connections: Connection[],
   generateId: string
 ): string[] {
-  return connections
+  const directOutputIds = connections
     .filter((connection) => connection.fromId === generateId)
     .map((connection) => elements.find((element) => element.id === connection.toId))
     .filter(
@@ -229,6 +255,41 @@ export function getConnectedOutputIds(
       return aIndex - bIndex;
     })
     .map((element) => element.id);
+
+  const reversedEmptyOutputIds = connections
+    .filter((connection) => connection.toId === generateId)
+    .map((connection) => elements.find((element) => element.id === connection.fromId))
+    .filter(
+      (element): element is WorkflowNodeElement =>
+        isWorkflowNode(element) &&
+        element.nodeData.nodeType === "output" &&
+        !hasOutputMedia(element)
+    )
+    .map((element) => element.id);
+
+  return Array.from(new Set([...directOutputIds, ...reversedEmptyOutputIds]));
+}
+
+function normalizeEmptyOutputTargetConnections(
+  elements: CanvasElement[],
+  connections: Connection[],
+  generateId: string
+) {
+  connections.forEach((connection) => {
+    if (connection.toId !== generateId) return;
+    const from = elements.find((element) => element.id === connection.fromId);
+    const to = elements.find((element) => element.id === connection.toId);
+    if (
+      isWorkflowNode(from) &&
+      isWorkflowNode(to) &&
+      from.nodeData.nodeType === "output" &&
+      to.nodeData.nodeType === "generate" &&
+      !hasOutputMedia(from)
+    ) {
+      connection.fromId = generateId;
+      connection.toId = from.id;
+    }
+  });
 }
 
 export function getNode(elements: CanvasElement[], id: string): WorkflowNodeElement | undefined {

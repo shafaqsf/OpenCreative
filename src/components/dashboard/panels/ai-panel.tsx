@@ -29,7 +29,7 @@ import {
   createAgentMessage,
 } from "@/lib/projects/client-service";
 import { cloneElements } from "@/lib/canvas/clone";
-import { canConnectNodes } from "@/lib/canvas/workflow-engine";
+import { canConnectNodes, normalizeConnectionDirection } from "@/lib/canvas/workflow-engine";
 import type { CanvasElement, Connection } from "@/types/canvas";
 
 type LocalChat = {
@@ -429,8 +429,9 @@ export function AIPanel({
             const from = created[connection.from];
             const to = created[connection.to];
             if (!from || !to) continue;
-            if (!canConnectNodes(nextElements, nextConnections, from.id, to.id).ok) continue;
-            nextConnections = [...nextConnections, { id: uid(), fromId: from.id, toId: to.id }];
+            const normalized = normalizeConnectionDirection(nextElements, from.id, to.id);
+            if (!canConnectNodes(nextElements, nextConnections, normalized.fromId, normalized.toId).ok) continue;
+            nextConnections = [...nextConnections, { id: uid(), ...normalized }];
             addedConnections++;
             graphChanged = true;
           }
@@ -460,10 +461,15 @@ export function AIPanel({
         }
         case "connect_nodes": {
           for (const connection of action.connections) {
-            if (!canConnectNodes(nextElements, nextConnections, connection.fromId, connection.toId).ok) continue;
+            const normalized = normalizeConnectionDirection(
+              nextElements,
+              connection.fromId,
+              connection.toId
+            );
+            if (!canConnectNodes(nextElements, nextConnections, normalized.fromId, normalized.toId).ok) continue;
             nextConnections = [
               ...nextConnections,
-              { id: uid(), fromId: connection.fromId, toId: connection.toId },
+              { id: uid(), ...normalized },
             ];
             addedConnections++;
             graphChanged = true;

@@ -29,7 +29,7 @@ import {
 import { useHistory } from "./use-history";
 import { cloneElements } from "./clone";
 import { getBounds } from "./hit-test";
-import { canConnectNodes } from "./workflow-engine";
+import { canConnectNodes, normalizeConnectionDirection } from "./workflow-engine";
 
 type CanvasContextValue = {
   elements: CanvasElement[];
@@ -515,16 +515,28 @@ export function CanvasProvider({
   const addConnection = useCallback(
     (fromId: string, toId: string) => {
       setHistory((prev) => {
-        const validation = canConnectNodes(prev.elements, prev.connections, fromId, toId);
+        const normalized = normalizeConnectionDirection(prev.elements, fromId, toId);
+        const validation = canConnectNodes(
+          prev.elements,
+          prev.connections,
+          normalized.fromId,
+          normalized.toId
+        );
         if (!validation.ok) return prev;
-        if (prev.connections.some((c) => c.fromId === fromId && c.toId === toId))
+        if (prev.connections.some((c) => c.fromId === normalized.fromId && c.toId === normalized.toId))
           return prev;
         return {
           ...prev,
-          connections: [...prev.connections, { id: uid(), fromId, toId }],
+          connections: [...prev.connections, { id: uid(), ...normalized }],
         };
       });
-      return canConnectNodes(present.elements, present.connections, fromId, toId).ok;
+      const normalized = normalizeConnectionDirection(present.elements, fromId, toId);
+      return canConnectNodes(
+        present.elements,
+        present.connections,
+        normalized.fromId,
+        normalized.toId
+      ).ok;
     },
     [present.connections, present.elements, setHistory]
   );
