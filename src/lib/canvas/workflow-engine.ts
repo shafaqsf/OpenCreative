@@ -231,10 +231,45 @@ export function getGenerateRunIssue(
 
   const input = collectGenerateInput(elements, connections, generateId);
   if (!input.prompt && !input.mediaUrl) {
-    return "Connect at least one prompt or source before running this generate node.";
+    const upstreamNodes = getGenerateInputNodes(elements, connections, generateId);
+    const hasPrompt = upstreamNodes.some((node) => node.nodeData.nodeType === "prompt");
+    const hasSource = upstreamNodes.some((node) => node.nodeData.nodeType === "source");
+    const hasMediaOutput = upstreamNodes.some((node) =>
+      node.nodeData.nodeType === "generate" || node.nodeData.nodeType === "output"
+    );
+
+    if (hasPrompt && !hasSource && !hasMediaOutput) {
+      return "Add text to the connected prompt node before running this generate node.";
+    }
+
+    if (hasSource && !hasPrompt && !hasMediaOutput) {
+      return "Add a URL or upload media to the connected source node before running this generate node.";
+    }
+
+    if (hasMediaOutput && !hasPrompt && !hasSource) {
+      return "Select or create media in the connected output node before running this generate node.";
+    }
+
+    if (upstreamNodes.length > 0) {
+      return "Add prompt text, source media, or selected output media before running this generate node.";
+    }
+
+    return "Connect at least one prompt, source, or output node before running this generate node.";
   }
 
   return undefined;
+}
+
+function getGenerateInputNodes(
+  elements: CanvasElement[],
+  connections: Connection[],
+  generateId: string
+) {
+  const upstreamIds = collectUpstreamIds(connections, generateId);
+  return elements.filter(
+    (element): element is WorkflowNodeElement =>
+      upstreamIds.has(element.id) && isWorkflowNode(element)
+  );
 }
 
 export function getConnectedOutputIds(

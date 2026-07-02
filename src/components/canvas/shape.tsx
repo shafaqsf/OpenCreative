@@ -380,7 +380,7 @@ function WorkflowNode({
                   </span>
                   {generateRunIssue ? (
                     <span style={{ fontSize: 9, color: "#dc2626", textAlign: "center", lineHeight: 1.25 }}>
-                      {generateRunIssue.includes("output") ? "Connect Output" : "Connect Input"}
+                      {getGenerateIssueLabel(generateRunIssue)}
                     </span>
                   ) : (
                     <button
@@ -489,6 +489,14 @@ function getSelectedOutputIndex(nodeData: NodeData) {
   const parsed = Number.parseInt(nodeData.properties.selectedOutputIndex ?? "0", 10);
   if (!Number.isFinite(parsed)) return 0;
   return Math.min(Math.max(parsed, 0), outputCount - 1);
+}
+
+function getGenerateIssueLabel(issue: string) {
+  if (issue.includes("output node before")) return "Connect Output";
+  if (issue.includes("prompt node")) return "Add Prompt Text";
+  if (issue.includes("source node")) return "Add Source Media";
+  if (issue.includes("connected output")) return "Select Output Media";
+  return "Connect Input";
 }
 
 function starPoints(cx: number, cy: number, rx: number, ry: number) {
