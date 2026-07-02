@@ -9,7 +9,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Loader2,
-  Play,
   MousePointer2,
   Square,
   Circle,
@@ -208,27 +207,6 @@ function ProjectCanvasInner({
   const rightPanel = useResizablePanel("right", 256, { min: 200, max: 400 });
 
   useKeyboardShortcuts();
-
-  const workflowRunState = useMemo(() => {
-    const generateNodes = elements.filter(
-      (element) => element.nodeData?.nodeType === "generate"
-    );
-    if (generateNodes.length === 0) {
-      return { canRun: false, reason: "Add a Generate node." };
-    }
-
-    const firstIssue = generateNodes
-      .map((node) => getGenerateRunIssue(elements, connections, node.id))
-      .find(Boolean);
-    const hasRunnableGenerate = generateNodes.some(
-      (node) => !getGenerateRunIssue(elements, connections, node.id)
-    );
-
-    return {
-      canRun: hasRunnableGenerate,
-      reason: hasRunnableGenerate ? undefined : firstIssue,
-    };
-  }, [elements, connections]);
 
   const handleRunRef = useRef<() => void>(() => {});
   const processQueueRef = useRef<() => void>(() => {});
@@ -591,13 +569,6 @@ function ProjectCanvasInner({
         onSelect: () => setActiveTool("output"),
       },
       {
-        id: "workflow-run",
-        title: "Run workflow",
-        section: "Workflow",
-        icon: <Play className="size-3.5" />,
-        onSelect: handleRun,
-      },
-      {
         id: "edit-undo",
         title: "Undo",
         section: "Edit",
@@ -696,7 +667,6 @@ function ProjectCanvasInner({
     ],
     [
       setActiveTool,
-      handleRun,
       canUndo,
       undo,
       canRedo,
@@ -819,20 +789,6 @@ function ProjectCanvasInner({
               {saveStatus === "error" && "Save failed"}
             </span>
           )}
-
-          <button
-            onClick={handleRun}
-            disabled={running || !workflowRunState.canRun}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-              running || !workflowRunState.canRun
-                ? "bg-neutral-100 text-neutral-400"
-                : "bg-neutral-900 text-white hover:bg-neutral-800"
-            }`}
-            title={workflowRunState.canRun ? "Run workflow" : workflowRunState.reason}
-          >
-            {running ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-            {running ? "Running" : "Run"}
-          </button>
 
           {queueCount > 0 && (
             <span className="flex items-center gap-1.5 text-xs text-amber-600">

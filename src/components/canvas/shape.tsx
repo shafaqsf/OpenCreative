@@ -163,7 +163,7 @@ function WorkflowNode({
   const strokeColor =
     status === "error" ? "#dc2626" : status === "running" ? "#2563eb" : border;
   const strokeW = status === "running" ? 2 : 1.5;
-  const { elements, connections, runWorkflow, selectedIds, updateNodeProperties } = useCanvas();
+  const { elements, connections, runWorkflow, selectedIds, updateElement, updateNodeProperties } = useCanvas();
 
   const sourceUrl = nodeType === "source" ? nodeData.properties.url?.trim() : undefined;
   const selectedOutputIndex = getSelectedOutputIndex(nodeData);
@@ -186,6 +186,17 @@ function WorkflowNode({
     nodeType === "generate" ? collectGenerateInput(elements, connections, element.id) : undefined;
   const generateOutputCount =
     nodeType === "generate" ? getConnectedOutputIds(elements, connections, element.id).length : 0;
+  const resizeToMedia = (naturalWidth: number, naturalHeight: number) => {
+    if ((nodeType !== "source" && nodeType !== "output") || naturalWidth <= 0 || naturalHeight <= 0) return;
+    const nextSize = fitMediaNodeSize(naturalWidth, naturalHeight);
+    if (Math.abs(Math.abs(element.width) - nextSize.width) < 2 && Math.abs(Math.abs(element.height) - nextSize.height) < 2) {
+      return;
+    }
+    updateElement(element.id, {
+      width: element.width < 0 ? -nextSize.width : nextSize.width,
+      height: element.height < 0 ? -nextSize.height : nextSize.height,
+    });
+  };
 
   return (
     <g>
@@ -312,6 +323,9 @@ function WorkflowNode({
                   src={mediaUrl}
                   muted
                   controls={isSelected}
+                  onLoadedMetadata={(event) =>
+                    resizeToMedia(event.currentTarget.videoWidth, event.currentTarget.videoHeight)
+                  }
                   style={{
                     maxWidth: "100%",
                     maxHeight: isSelected && (nodeType === "output" || nodeType === "source") ? "58%" : "100%",
@@ -324,6 +338,9 @@ function WorkflowNode({
                 <img
                   src={mediaUrl}
                   alt=""
+                  onLoad={(event) =>
+                    resizeToMedia(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+                  }
                   style={{
                     maxWidth: "100%",
                     maxHeight: isSelected && (nodeType === "output" || nodeType === "source") ? "58%" : "100%",
@@ -772,6 +789,29 @@ const mediaActionButtonStyle: CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
 };
+
+function fitMediaNodeSize(mediaWidth: number, mediaHeight: number) {
+  const aspect = mediaWidth / mediaHeight;
+  const minWidth = 180;
+  const maxWidth = 360;
+  const maxMediaHeight = 280;
+  const chromeHeight = 44;
+  const controlsReserve = 72;
+
+  let width = Math.min(Math.max(mediaWidth, minWidth), maxWidth);
+  let mediaHeightForWidth = width / aspect;
+
+  if (mediaHeightForWidth > maxMediaHeight) {
+    mediaHeightForWidth = maxMediaHeight;
+    width = mediaHeightForWidth * aspect;
+  }
+
+  width = Math.max(minWidth, Math.round(width));
+  return {
+    width,
+    height: Math.round(mediaHeightForWidth + chromeHeight + controlsReserve),
+  };
+}
 
 function getSelectedOutputIndex(nodeData: NodeData) {
   const outputCount = nodeData.outputUrls?.length ?? 0;
